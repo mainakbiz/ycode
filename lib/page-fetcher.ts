@@ -3469,7 +3469,7 @@ async function injectCollectionDataForHtml(
  * @param isPublished - Whether to fetch published (true) or draft (false) assets
  * @param components - Available components, needed to resolve assets from rich-text embedded components
  */
-async function resolveAllAssets(
+export async function resolveAllAssets(
   layers: Layer[],
   isPublished: boolean = true,
   components?: Component[],
@@ -3650,7 +3650,7 @@ function resolveRichTextImageAssets(
 /**
  * Build a map of layerId -> anchor value (attributes.id) for O(1) anchor resolution
  */
-function buildAnchorMap(layers: Layer[]): Record<string, string> {
+export function buildAnchorMap(layers: Layer[]): Record<string, string> {
   const map: Record<string, string> = {};
 
   const traverse = (layerList: Layer[]) => {
@@ -3961,7 +3961,7 @@ function makeAssetMapResolver(
  * Convert a Layer to HTML string
  * Handles common layer types and their attributes
  */
-function layerToHtml(
+export function layerToHtml(
   layer: Layer,
   collectionItemId?: string,
   pages?: Page[],

@@ -45,6 +45,7 @@ import { MAILERLITE_SUBSCRIBER_FIELDS } from '@/lib/apps/mailerlite/types';
 import type { MailerLiteConnection, MailerLiteFieldMapping } from '@/lib/apps/mailerlite/types';
 import AirtableSettings from './airtable-settings';
 import WebflowSettings from './webflow-settings';
+import StaticExportSettings from './static-export-settings';
 
 // =============================================================================
 // Types
@@ -1101,6 +1102,10 @@ export default function AppsPage() {
                   router.push(path);
                 }}
               />
+            )}
+
+            {selectedAppId === 'static-export' && (
+              <StaticExportSettings />
             )}
 
             {selectedAppId === 'mailerlite' && (

@@ -19,6 +19,7 @@ import zapierLogo from './zapier/logo.svg';
 import makeLogo from './make/logo.svg';
 import mapboxLogo from './mapbox/logo.png';
 import googleMapsEmbedLogo from './google-maps-embed/logo.png';
+import staticExportLogo from './static-export/logo.svg';
 
 // =============================================================================
 // Types
@@ -119,6 +120,14 @@ export const apps: AppDefinition[] = [
     description: 'Add interactive maps to your pages with custom styles using the Google Maps Embed API.',
     logo: googleMapsEmbedLogo,
     categories: ['popular', 'maps'],
+    implemented: true,
+  },
+  {
+    id: 'static-export',
+    name: 'Static HTML Export',
+    description: 'Export your site as static HTML/CSS/JS — host anywhere: S3, Netlify, Cloudflare Pages, or local files.',
+    logo: staticExportLogo,
+    categories: ['popular', 'other'],
     implemented: true,
   },
 ];

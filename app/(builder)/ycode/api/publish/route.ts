@@ -14,6 +14,7 @@ import {
   invalidateForLocalisationChanges,
 } from '@/lib/services/cacheService';
 import { findAffectedPages } from '@/lib/repositories/pageLayersRepository';
+import { dispatchSitePublishedEvent } from '@/lib/services/webhookService';
 import { getAllDraftPages, hardDeleteSoftDeletedPages } from '@/lib/repositories/pageRepository';
 import { publishComponents, getUnpublishedComponents, hardDeleteSoftDeletedComponents } from '@/lib/repositories/componentRepository';
 import { publishLayerStyles, getUnpublishedLayerStyles, hardDeleteSoftDeletedLayerStyles } from '@/lib/repositories/layerStyleRepository';
@@ -729,6 +730,30 @@ export async function POST(request: NextRequest) {
       result.published_at_setting = await savePublishedAt(publishedAt);
     } catch {
       // Silently handle - non-fatal
+    }
+
+    // Dispatch site.published webhook for integrations (e.g. static HTML export)
+    try {
+      await dispatchSitePublishedEvent({
+        pages_count: result.changes.pages,
+        collections_count: result.changes.collectionItems,
+      });
+    } catch {
+      // Silently handle - non-fatal (webhook failures must not block publish)
+    }
+
+    // Trigger static HTML export if auto-export is enabled
+    try {
+      const { getExportConfig, exportSite } = await import('@/lib/apps/static-export');
+      const config = await getExportConfig();
+      if (config.autoExportOnPublish) {
+        // Fire-and-forget — don't block the publish response
+        exportSite().catch((err: unknown) => {
+          console.error('[Static Export] Auto-export on publish failed:', err);
+        });
+      }
+    } catch {
+      // Silently handle — export module may not be loaded yet
     }
 
     // Calculate total duration
