@@ -676,10 +676,13 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   // Mirror the active component variant id into the URL while editing a
   // component, so reloads land back on the same variant. Uses
   // `updateQueryParams` to avoid a router push (no history entry).
+  // Guard on `editingComponentId` so we don't wipe the URL's `?variant=`
+  // param before the init effect has had a chance to read it.
   useEffect(() => {
     if (routeType !== 'component') return;
+    if (!editingComponentId) return;
     updateQueryParams({ variant: editingComponentVariantId ?? null });
-  }, [routeType, editingComponentVariantId, updateQueryParams]);
+  }, [routeType, editingComponentId, editingComponentVariantId, updateQueryParams]);
 
   // Auto-select Body layer when switching pages (not when draft updates)
   useEffect(() => {
