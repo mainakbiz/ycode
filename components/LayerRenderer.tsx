@@ -607,45 +607,49 @@ const LayerItemImpl: React.FC<{
   const textVariable = layer.variables?.text;
   let useSpanForParagraphs = false;
 
-  if (!isSimpleTextLayer) {
-    const restrictiveBlockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'a', 'button'];
-    const isRestrictiveTag = restrictiveBlockTags.includes(htmlTag);
+  const restrictiveBlockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'a', 'button'];
+  const isRestrictiveTag = restrictiveBlockTags.includes(htmlTag);
 
-    if (isRestrictiveTag) {
-      let hasLists = false;
+  if (isRestrictiveTag) {
+    let hasLists = false;
 
-      if (textVariable?.type === 'dynamic_rich_text') {
-        hasLists = hasBlockElementsWithInlineVariables(
-          textVariable as any,
-          collectionLayerData,
-          pageCollectionItemData || undefined
-        );
-      }
+    if (textVariable?.type === 'dynamic_rich_text') {
+      hasLists = hasBlockElementsWithInlineVariables(
+        textVariable as any,
+        collectionLayerData,
+        pageCollectionItemData || undefined
+      );
+    }
 
-      // Also check resolved component variable value for block elements
-      if (!hasLists) {
-        const componentVariables = parentComponentVariables || editingComponentVariables;
-        const linkedVariableId = (textVariable as any)?.id;
-        if (linkedVariableId && componentVariables) {
-          const variableDef = componentVariables.find(v => v.id === linkedVariableId);
-          const overrideCategory = variableDef?.type === 'rich_text' ? 'rich_text' : 'text';
-          const overrideValue = parentComponentOverrides?.[overrideCategory]?.[linkedVariableId];
-          const valueToCheck = overrideValue ?? variableDef?.default_value;
-          if (valueToCheck && 'type' in valueToCheck && valueToCheck.type === 'dynamic_rich_text') {
-            hasLists = hasBlockElementsWithInlineVariables(
-              valueToCheck as any,
-              collectionLayerData,
-              pageCollectionItemData || undefined
-            );
-          }
+    // Also check resolved component variable value for block elements
+    if (!hasLists) {
+      const componentVariables = parentComponentVariables || editingComponentVariables;
+      const linkedVariableId = (textVariable as any)?.id;
+      if (linkedVariableId && componentVariables) {
+        const variableDef = componentVariables.find(v => v.id === linkedVariableId);
+        const overrideCategory = variableDef?.type === 'rich_text' ? 'rich_text' : 'text';
+        const overrideValue = parentComponentOverrides?.[overrideCategory]?.[linkedVariableId];
+        const valueToCheck = overrideValue ?? variableDef?.default_value;
+        if (valueToCheck && 'type' in valueToCheck && valueToCheck.type === 'dynamic_rich_text') {
+          hasLists = hasBlockElementsWithInlineVariables(
+            valueToCheck as any,
+            collectionLayerData,
+            pageCollectionItemData || undefined
+          );
         }
       }
+    }
 
-      if (hasLists) {
-        htmlTag = 'div';
-      } else if (textVariable?.type === 'dynamic_rich_text' || (textVariable as any)?.id) {
-        useSpanForParagraphs = true;
-      }
+    if (hasLists) {
+      // Block-level expansion (lists, tables, embedded components) cannot live
+      // inside <p>/<h*>/<span>; switch the wrapper to a <div> regardless of
+      // whether this is a simple text layer or a richText layer.
+      htmlTag = 'div';
+    } else if (!isSimpleTextLayer && (textVariable?.type === 'dynamic_rich_text' || (textVariable as any)?.id)) {
+      // For non-simple-text layers with rich-text content but no block
+      // expansion, render paragraphs as <span class="block"> to keep them
+      // valid inside the existing wrapper.
+      useSpanForParagraphs = true;
     }
   }
 

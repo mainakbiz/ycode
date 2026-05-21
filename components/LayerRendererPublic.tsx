@@ -419,26 +419,28 @@ const LayerItem: React.FC<{
   const textVariable = layer.variables?.text;
   let useSpanForParagraphs = false;
 
-  if (!isSimpleTextLayer) {
-    const restrictiveBlockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'a', 'button'];
-    const isRestrictiveTag = restrictiveBlockTags.includes(htmlTag);
+  // Detect block-level expansion (lists, tables, headings, embedded components,
+  // or a rich_text CMS variable that expands to blocks). This decides both the
+  // wrapper tag and whether the content can be flattened to a single paragraph.
+  const hasBlockExpansion = textVariable?.type === 'dynamic_rich_text'
+    ? hasBlockElementsWithInlineVariables(
+        textVariable as any,
+        collectionLayerData,
+        pageCollectionItemData || undefined,
+    )
+    : false;
 
-    if (isRestrictiveTag) {
-      let hasLists = false;
+  const restrictiveBlockTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'a', 'button'];
+  const isRestrictiveTag = restrictiveBlockTags.includes(htmlTag);
 
-      if (textVariable?.type === 'dynamic_rich_text') {
-        hasLists = hasBlockElementsWithInlineVariables(
-          textVariable as any,
-          collectionLayerData,
-          pageCollectionItemData || undefined
-        );
-      }
-
-      if (hasLists) {
-        htmlTag = 'div';
-      } else if (textVariable?.type === 'dynamic_rich_text' || (textVariable as any)?.id) {
-        useSpanForParagraphs = true;
-      }
+  if (isRestrictiveTag) {
+    if (hasBlockExpansion) {
+      // Block-level expansion cannot live inside <p>/<h*>/<span>; switch the
+      // wrapper to a <div> regardless of whether this is a simple text layer
+      // or a richText layer.
+      htmlTag = 'div';
+    } else if (!isSimpleTextLayer && (textVariable?.type === 'dynamic_rich_text' || (textVariable as any)?.id)) {
+      useSpanForParagraphs = true;
     }
   }
 
@@ -569,10 +571,15 @@ const LayerItem: React.FC<{
 
     // DynamicRichTextVariable format (with formatting)
     if (textVariable?.type === 'dynamic_rich_text') {
-      const variable = isSimpleTextLayer
+      // Simple text layers (text/heading) normally collapse all paragraphs
+      // into one to fit the layer's single-tag wrapper. Skip flattening when
+      // the content expands to block elements (e.g. a CMS rich_text variable
+      // resolving to headings/tables/lists), otherwise that formatting is lost.
+      const shouldFlatten = isSimpleTextLayer && !hasBlockExpansion;
+      const variable = shouldFlatten
         ? { ...textVariable, data: { ...textVariable.data, content: flattenTiptapParagraphs(textVariable.data.content) } }
         : textVariable;
-      return renderRichText(variable as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, false, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, isSimpleTextLayer);
+      return renderRichText(variable as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, false, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, shouldFlatten);
     }
 
     // Check for inline variables in DynamicTextVariable format (legacy)
