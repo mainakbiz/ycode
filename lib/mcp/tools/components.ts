@@ -75,7 +75,7 @@ export function registerComponentTools(server: McpServer) {
         is_published: c.is_published,
       }));
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(summary) }],
       };
     },
   );
@@ -93,7 +93,7 @@ export function registerComponentTools(server: McpServer) {
         };
       }
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(component, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(component) }],
       };
     },
   );
@@ -142,7 +142,7 @@ EXAMPLE: A "Card" component with a title variable:
             id: component.id,
             root_layer_id: rootLayer.id,
             variables: component.variables || [],
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -171,7 +171,7 @@ EXAMPLE: A "Card" component with a title variable:
           text: JSON.stringify({
             message: `Component "${component.name}" updated`,
             variables: component.variables || [],
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -200,7 +200,7 @@ EXAMPLE: A "Card" component with a title variable:
         layer_count: countLayers(v.layers),
         is_primary: v === variants[0],
       }));
-      return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(summary) }] };
     },
   );
 
@@ -259,7 +259,7 @@ EXAMPLE: A "Card" component with a title variable:
             message: `Variant "${name}" created`,
             id: newVariant.id,
             root_layer_id: layers[0]?.id,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -590,7 +590,7 @@ Pass variant_id to target a specific named variant; omit it to update the primar
       const errors = results.filter((r) => r.status === 'error');
       if (errors.length === operations.length) {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ message: 'All operations failed', results }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ message: 'All operations failed', results }) }],
           isError: true,
         };
       }
@@ -607,7 +607,7 @@ Pass variant_id to target a specific named variant; omit it to update the primar
             message: `Executed ${results.filter((r) => r.status === 'ok').length}/${operations.length} operations`,
             ref_ids: Object.keys(refEntries).length > 0 ? refEntries : undefined,
             results,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -630,7 +630,7 @@ Pass variant_id to target a specific named variant; omit it to update the primar
               type: e.type,
               name: e.name,
             })),
-          }, null, 2),
+          }),
         }],
       };
     },

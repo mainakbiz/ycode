@@ -13,7 +13,7 @@ export function registerStyleTools(server: McpServer) {
     {},
     async () => {
       const styles = await getAllStyles();
-      return { content: [{ type: 'text' as const, text: JSON.stringify(styles, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(styles) }] };
     },
   );
 
@@ -30,7 +30,7 @@ export function registerStyleTools(server: McpServer) {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ message: `Created style "${name}"`, style_id: style.id, classes }, null, 2),
+          text: JSON.stringify({ message: `Created style "${name}"`, style_id: style.id, classes }),
         }],
       };
     },
@@ -79,7 +79,7 @@ export function registerStyleTools(server: McpServer) {
         updates.classes = designToClassString(design as DesignProperties);
       }
       const style = await updateStyle(style_id, updates);
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Updated style "${style.name}"`, style }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Updated style "${style.name}"`, style }) }] };
     },
   );
 

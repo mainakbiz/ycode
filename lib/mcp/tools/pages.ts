@@ -27,7 +27,7 @@ export function registerPageTools(server: McpServer) {
       const pages = await getAllPages();
       const folders = await getAllPageFolders();
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ pages, folders }, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ pages, folders }) }],
       };
     },
   );
@@ -41,7 +41,7 @@ export function registerPageTools(server: McpServer) {
       if (!page) {
         return { content: [{ type: 'text' as const, text: `Error: Page "${page_id}" not found.` }], isError: true };
       }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(page) }] };
     },
   );
 
@@ -87,7 +87,7 @@ export function registerPageTools(server: McpServer) {
       broadcastPageCreated(page).catch(() => {});
       broadcastLayersChanged(page.id, initialLayers).catch(() => {});
 
-      return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(page) }] };
     },
   );
 
@@ -110,7 +110,7 @@ DYNAMIC PAGES: Set is_dynamic true to turn this into a CMS-driven page (then use
     async ({ page_id, ...data }) => {
       const page = await updatePage(page_id, data);
       broadcastPageUpdated(page_id, data).catch(() => {});
-      return { content: [{ type: 'text' as const, text: JSON.stringify(page, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(page) }] };
     },
   );
 
@@ -200,7 +200,7 @@ how next-item / previous-item links traverse the collection.`,
 
       const page = await updatePage(page_id, { settings });
       broadcastPageUpdated(page_id, { settings }).catch(() => {});
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Updated page settings', settings: page.settings }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Updated page settings', settings: page.settings }) }] };
     },
   );
 
@@ -211,7 +211,7 @@ how next-item / previous-item links traverse the collection.`,
     async ({ page_id }) => {
       const page = await duplicatePage(page_id);
       broadcastPageCreated(page).catch(() => {});
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Duplicated page as "${page.name}"`, page }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Duplicated page as "${page.name}"`, page }) }] };
     },
   );
 
@@ -234,7 +234,7 @@ or external URL), with optional 301 (permanent) or 302 (temporary) semantics. Pa
     {},
     async () => {
       const redirects = await getRedirects();
-      return { content: [{ type: 'text' as const, text: JSON.stringify(redirects, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(redirects) }] };
     },
   );
 
@@ -260,7 +260,7 @@ Examples:
         ...(type && { type }),
       };
       await setSetting(REDIRECTS_KEY, [...redirects, newRedirect]);
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Redirect added', redirect: newRedirect }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Redirect added', redirect: newRedirect }) }] };
     },
   );
 
@@ -288,7 +288,7 @@ Examples:
       const next = [...redirects];
       next[idx] = updated;
       await setSetting(REDIRECTS_KEY, next);
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Redirect updated', redirect: updated }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: 'Redirect updated', redirect: updated }) }] };
     },
   );
 

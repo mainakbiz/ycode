@@ -28,13 +28,38 @@ function cleanupStaleSessions() {
   }
 }
 
+/**
+ * Token validation cache. AI agents make many requests per minute and each
+ * was previously hitting Supabase to revalidate the same token. Cache hits
+ * for 60s (revocations propagate within a minute, fine for agent use).
+ * Misses cache for 5s so a token flip from invalid→valid recovers quickly.
+ */
+interface TokenCacheEntry {
+  valid: boolean;
+  expires: number;
+}
+const tokenCache = new Map<string, TokenCacheEntry>();
+const TOKEN_CACHE_TTL_VALID_MS = 60_000;
+const TOKEN_CACHE_TTL_INVALID_MS = 5_000;
+
 async function authenticateToken(token: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = tokenCache.get(token);
+  if (cached && cached.expires > now) {
+    return cached.valid;
+  }
+
+  let valid = false;
   try {
     const result = await validateToken(token);
-    return result !== null;
+    valid = result !== null;
   } catch {
-    return false;
+    valid = false;
   }
+
+  const ttl = valid ? TOKEN_CACHE_TTL_VALID_MS : TOKEN_CACHE_TTL_INVALID_MS;
+  tokenCache.set(token, { valid, expires: now + ttl });
+  return valid;
 }
 
 function addCorsHeaders(response: Response): Response {

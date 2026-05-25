@@ -19,7 +19,7 @@ export function registerFormTools(server: McpServer) {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify(summaries, null, 2),
+          text: JSON.stringify(summaries),
         }],
       };
     },
@@ -43,7 +43,7 @@ export function registerFormTools(server: McpServer) {
             payload: s.payload,
             status: s.status,
             created_at: s.created_at,
-          })), null, 2),
+          }))),
         }],
       };
     },
@@ -61,7 +61,7 @@ export function registerFormTools(server: McpServer) {
         return { content: [{ type: 'text' as const, text: `Error: Submission "${submission_id}" not found.` }], isError: true };
       }
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(submission, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(submission) }],
       };
     },
   );
@@ -78,7 +78,7 @@ export function registerFormTools(server: McpServer) {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ message: `Submission marked as "${status}"`, submission }, null, 2),
+          text: JSON.stringify({ message: `Submission marked as "${status}"`, submission }),
         }],
       };
     },

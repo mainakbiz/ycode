@@ -44,7 +44,7 @@ Use add_layout to insert any of these into a page.`,
     async () => {
       const catalog = buildLayoutCatalog();
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(catalog, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(catalog) }],
       };
     },
   );
@@ -116,7 +116,7 @@ Use list_layouts to see available layouts.`,
             container_id: layoutLayer.children?.[0]?.id,
             layout_key,
             category,
-          }, null, 2),
+          }),
         }],
       };
     },

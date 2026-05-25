@@ -125,7 +125,7 @@ export function registerReferenceResources(server: McpServer) {
               localeSelector: 'Language switcher for multi-language sites.',
             },
           },
-        }, null, 2),
+        }),
       }],
     }),
   );
@@ -205,7 +205,7 @@ export function registerReferenceResources(server: McpServer) {
               transitionDelay: { type: 'css_value', examples: ['0ms', '100ms'] },
             },
           },
-        }, null, 2),
+        }),
       }],
     }),
   );
@@ -269,7 +269,7 @@ export function registerReferenceResources(server: McpServer) {
               apply_styles: { autoAlpha: 'on-load', y: 'on-load' },
             }],
           },
-        }, null, 2),
+        }),
       }],
     }),
   );
@@ -285,7 +285,7 @@ export function registerReferenceResources(server: McpServer) {
       contents: [{
         uri: 'ycode://reference/prompts',
         mimeType: 'application/json',
-        text: JSON.stringify(EXAMPLE_PROMPTS, null, 2),
+        text: JSON.stringify(EXAMPLE_PROMPTS),
       }],
     }),
   );

@@ -174,7 +174,7 @@ Options vary by preset:
             message: `Added "${preset}" animation to "${owner.customName || owner.name}"`,
             interaction_id: interaction.id,
             tween_count: interaction.tweens.length,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -200,7 +200,7 @@ Options vary by preset:
         tween_count: i.tweens.length,
         targets: Array.from(new Set(i.tweens.map((t) => t.layer_id))),
       }));
-      return { content: [{ type: 'text' as const, text: JSON.stringify(interactions, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(interactions) }] };
     },
   );
 
@@ -296,7 +296,7 @@ position can be a number (seconds), ">" (after previous), or "<" (with previous)
           text: JSON.stringify({
             message: `Set ${normalized.length} interaction(s) on "${layer.customName || layer.name}"`,
             interaction_ids: normalized.map((i) => i.id),
-          }, null, 2),
+          }),
         }],
       };
     },

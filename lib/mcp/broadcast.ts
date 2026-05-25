@@ -6,10 +6,55 @@
  * so the editor UI updates in real time when an AI agent makes changes.
  */
 
+import type { RealtimeChannel } from '@supabase/supabase-js';
+
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import type { Component, Layer, Page } from '@/types';
 
 const MCP_USER_ID = '__mcp_agent__';
+
+/**
+ * Cache subscribed realtime channels by name so successive broadcasts on the
+ * same channel skip the ~50-300ms subscribe round trip. A failed subscription
+ * removes itself from the cache so the next call retries from scratch.
+ *
+ * Stored on globalThis so the cache survives Next.js HMR in dev (same pattern
+ * as the Supabase admin client itself).
+ */
+const globalForChannels = globalThis as unknown as {
+  __mcpBroadcastChannels?: Map<string, Promise<RealtimeChannel>>;
+};
+
+const channelCache = globalForChannels.__mcpBroadcastChannels ?? new Map<string, Promise<RealtimeChannel>>();
+globalForChannels.__mcpBroadcastChannels = channelCache;
+
+async function getOrCreateChannel(channelName: string): Promise<RealtimeChannel> {
+  const cached = channelCache.get(channelName);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const client = await getSupabaseAdmin();
+    if (!client) throw new Error('Supabase not configured');
+
+    const channel = client.channel(channelName);
+
+    await new Promise<void>((resolve, reject) => {
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') resolve();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          reject(new Error(`Realtime subscribe failed: ${status}`));
+        }
+      });
+    });
+
+    return channel;
+  })();
+
+  channelCache.set(channelName, promise);
+  promise.catch(() => channelCache.delete(channelName));
+
+  return promise;
+}
 
 async function broadcast(
   channelName: string,
@@ -17,22 +62,11 @@ async function broadcast(
   payload: Record<string, unknown>,
 ): Promise<void> {
   try {
-    const client = await getSupabaseAdmin();
-    if (!client) return;
-
-    const channel = client.channel(channelName);
-
-    await new Promise<void>((resolve, reject) => {
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') resolve();
-        else if (status === 'CHANNEL_ERROR') reject(new Error('Channel error'));
-      });
-    });
-
+    const channel = await getOrCreateChannel(channelName);
     await channel.send({ type: 'broadcast', event, payload });
-    await channel.unsubscribe();
   } catch (error) {
     console.error(`[MCP-BROADCAST] Failed to broadcast ${event}:`, error);
+    channelCache.delete(channelName);
   }
 }
 

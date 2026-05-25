@@ -75,7 +75,7 @@ export function registerCollectionTools(server: McpServer) {
     {},
     async () => {
       const collections = await getAllCollections();
-      return { content: [{ type: 'text' as const, text: JSON.stringify(collections, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(collections) }] };
     },
   );
 
@@ -88,7 +88,7 @@ export function registerCollectionTools(server: McpServer) {
     },
     async ({ name, sorting }) => {
       const collection = await createCollection({ name, sorting: sorting as CollectionSorting | undefined });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(collection, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(collection) }] };
     },
   );
 
@@ -126,7 +126,7 @@ FIELD TYPES:
         type: fieldData.type as CollectionFieldType,
         data: buildFieldData(data),
       });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(field, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(field) }] };
     },
   );
 
@@ -147,7 +147,7 @@ FIELD TYPES:
             fields: fields.map((f) => ({ id: f.id, name: f.name, type: f.type, key: f.key, data: f.data })),
             items,
             total,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -176,7 +176,7 @@ FIELD TYPES:
       const { items: itemWithValues } = await getItemsWithValues(collection_id);
       const created = itemWithValues.find((i) => i.id === item.id);
 
-      return { content: [{ type: 'text' as const, text: JSON.stringify(created || item, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(created || item) }] };
     },
   );
 
@@ -222,7 +222,7 @@ FIELD TYPES:
     },
     async ({ item_id, manual_order }) => {
       const item = await updateItem(item_id, { manual_order });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(item, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(item) }] };
     },
   );
 
@@ -240,7 +240,7 @@ FIELD TYPES:
       if (name !== undefined) updates.name = name;
       if (sorting !== undefined) updates.sorting = sorting as CollectionSorting | null;
       const collection = await updateCollection(collection_id, updates);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(collection, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(collection) }] };
     },
   );
 
@@ -273,7 +273,7 @@ FIELD TYPES:
         type: updates.type as CollectionFieldType | undefined,
         data: buildFieldData(data),
       });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(field, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(field) }] };
     },
   );
 

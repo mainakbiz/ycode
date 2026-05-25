@@ -19,7 +19,7 @@ export function registerAssetTools(server: McpServer) {
         height: a.height,
       }));
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(summary) }],
       };
     },
   );
@@ -85,7 +85,7 @@ Use base64_data for images generated locally (e.g. AI-generated images in a sand
               public_url: asset.public_url,
               width: asset.width,
               height: asset.height,
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {
@@ -105,7 +105,7 @@ Use base64_data for images generated locally (e.g. AI-generated images in a sand
       if (!asset) {
         return { content: [{ type: 'text' as const, text: `Error: Asset "${asset_id}" not found.` }], isError: true };
       }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(asset, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(asset) }] };
     },
   );
 
@@ -123,7 +123,7 @@ Use base64_data for images generated locally (e.g. AI-generated images in a sand
       if (folder_id !== undefined) updates.asset_folder_id = folder_id;
 
       const asset = await updateAsset(asset_id, updates);
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Updated asset "${asset.filename}"`, asset }, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Updated asset "${asset.filename}"`, asset }) }] };
     },
   );
 

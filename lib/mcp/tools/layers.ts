@@ -38,7 +38,7 @@ before making changes.`,
     { page_id: z.string().describe('The page ID') },
     async ({ page_id }) => {
       const layers = await getPageLayers(page_id);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(layers, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(layers) }] };
     },
   );
 
@@ -100,7 +100,7 @@ NESTING RULES:
             message: `Added ${template} "${custom_name || newLayer.customName || template}" to page`,
             layer_id: newLayer.id,
             parent_layer_id,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -154,7 +154,7 @@ For gradient text: also set backgroundClip: "text" and color to "transparent".`,
             layer_id,
             classes: updatedLayer?.classes,
             design: updatedLayer?.design,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -227,7 +227,7 @@ For gradient text: also set backgroundClip: "text" and color to "transparent".`,
           text: JSON.stringify({
             message: `Set rich text content for "${layer.customName || layer.name}" (${blocks.length} blocks)`,
             layer_id,
-          }, null, 2),
+          }),
         }],
       };
     },
