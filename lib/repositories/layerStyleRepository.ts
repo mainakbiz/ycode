@@ -759,6 +759,28 @@ export async function deleteStyle(id: string): Promise<void> {
 }
 
 /**
+ * Recursively check whether any layer in the tree references one of the
+ * given style IDs — either directly via `layer.styleId` or through a
+ * `textStyles` entry. Used to skip drafts that don't reference any of
+ * the changed styles so we don't bump their content_hash for no reason.
+ */
+function layersReferenceAnyStyle(layers: Layer[], styleIds: Set<string>): boolean {
+  for (const layer of layers) {
+    if (layer.styleId && styleIds.has(layer.styleId)) return true;
+    if (layer.textStyles) {
+      for (const ts of Object.values(layer.textStyles)) {
+        const tsStyleId = (ts as { styleId?: string })?.styleId;
+        if (tsStyleId && styleIds.has(tsStyleId)) return true;
+      }
+    }
+    if (Array.isArray(layer.children) && layer.children.length > 0) {
+      if (layersReferenceAnyStyle(layer.children, styleIds)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Propagate updated layer style values into the draft layers of every page
  * and component that references them.
  *
@@ -806,6 +828,8 @@ export async function syncLayerStyleChangesToDrafts(
     return { affectedPageIds: [], affectedComponentIds: [] };
   }
 
+  const styleIdSet = new Set(styles.map(s => s.id));
+
   // --- Sync draft page_layers ---
   const { data: pageLayersRecords } = await client
     .from('page_layers')
@@ -821,6 +845,16 @@ export async function syncLayerStyleChangesToDrafts(
     // style anyway, and hashing a missing `layers` field with our default
     // `[]` would diverge from whatever the original save path stored.
     if (!Array.isArray(record.layers)) continue;
+
+    // Skip drafts that don't reference any of the changed styles.
+    // Without this, recomputing the hash for unrelated drafts (e.g. those
+    // with NULL content_hash from a legacy import/template apply) bumps
+    // them into "affected" status and writes a fresh hash to the draft.
+    // The published row never sees this hash because the downstream
+    // CSS catch-up step only republishes pages found by findAffectedPages,
+    // which scans for actual style references — so the draft drifts ahead
+    // of published and getUnpublishedPages keeps flagging them.
+    if (!layersReferenceAnyStyle(record.layers as Layer[], styleIdSet)) continue;
 
     let layers = record.layers as Layer[];
     for (const style of styles) {
@@ -864,6 +898,17 @@ export async function syncLayerStyleChangesToDrafts(
     // Same guard as page_layers above: components with no layer tree have
     // nothing to sync, and forcing `[]` would diverge from the stored hash.
     if (!Array.isArray(record.layers)) continue;
+
+    // Skip components that don't reference any of the changed styles in
+    // their primary tree OR any variant tree. Same rationale as the
+    // page_layers guard above — keep over-eager hash bumps out of unrelated
+    // components.
+    const variantsList = Array.isArray(record.variants) ? (record.variants as ComponentVariant[]) : [];
+    const primaryReferences = layersReferenceAnyStyle(record.layers as Layer[], styleIdSet);
+    const variantReferences = variantsList.some(
+      v => Array.isArray(v.layers) && layersReferenceAnyStyle(v.layers as Layer[], styleIdSet),
+    );
+    if (!primaryReferences && !variantReferences) continue;
 
     let layers = record.layers as Layer[];
     for (const style of styles) {

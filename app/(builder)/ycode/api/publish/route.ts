@@ -15,7 +15,7 @@ import {
 } from '@/lib/services/cacheService';
 import { findAffectedPages } from '@/lib/repositories/pageLayersRepository';
 import { dispatchSitePublishedEvent } from '@/lib/services/webhookService';
-import { getAllDraftPages, hardDeleteSoftDeletedPages } from '@/lib/repositories/pageRepository';
+import { getAllDraftPages, hardDeleteSoftDeletedPages, backfillMissingPageHashes } from '@/lib/repositories/pageRepository';
 import { publishComponents, getUnpublishedComponents, hardDeleteSoftDeletedComponents } from '@/lib/repositories/componentRepository';
 import { publishLayerStyles, getUnpublishedLayerStyles, hardDeleteSoftDeletedLayerStyles } from '@/lib/repositories/layerStyleRepository';
 import { getAllCollections } from '@/lib/repositories/collectionRepository';
@@ -157,6 +157,16 @@ export async function POST(request: NextRequest) {
     const deletedCollectionItemSlugs: Map<string, string[]> = new Map();
     const renamedPageOldRoutes: string[] = [];
     let localisationResult: PublishLocalisationResult | null = null;
+
+    // Backfill any missing content_hash values before publish so change
+    // detection and the upsert-only-when-changed paths see consistent hashes
+    // on both draft and published rows (legacy migrations and templates
+    // insert rows without computing hashes).
+    try {
+      await backfillMissingPageHashes();
+    } catch (error) {
+      console.error('[publish] Failed to backfill page hashes:', error);
+    }
 
     // Publish folders first (pages depend on them)
     {

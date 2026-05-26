@@ -5,6 +5,7 @@ import { getUnpublishedCollections } from '@/lib/repositories/collectionReposito
 import { getUnpublishedComponents } from '@/lib/repositories/componentRepository';
 import { getUnpublishedLayerStyles } from '@/lib/repositories/layerStyleRepository';
 import { getUnpublishedAssets } from '@/lib/repositories/assetRepository';
+import { getUnpublishedTranslationsCount } from '@/lib/repositories/translationRepository';
 import { getDeletedDraftCount } from '@/lib/sync-utils';
 import { noCache } from '@/lib/api-response';
 
@@ -19,6 +20,7 @@ export interface PublishPreviewCounts {
   components: number;
   layerStyles: number;
   assets: number;
+  translations: number;
   total: number;
 }
 
@@ -36,6 +38,7 @@ export async function GET(_request: NextRequest) {
       componentsChanged, componentsDeleted,
       layerStylesChanged, layerStylesDeleted,
       assetsChanged, assetsDeleted,
+      translationsChanged,
     ] = await Promise.all([
       getUnpublishedPagesCount(),
       getDeletedDraftCount('pages'),
@@ -49,6 +52,7 @@ export async function GET(_request: NextRequest) {
       getDeletedDraftCount('layer_styles'),
       getUnpublishedAssets().then(a => a.length),
       getDeletedDraftCount('assets'),
+      getUnpublishedTranslationsCount(),
     ]);
 
     const pages = pagesChanged + pagesDeleted;
@@ -57,10 +61,11 @@ export async function GET(_request: NextRequest) {
     const components = componentsChanged + componentsDeleted;
     const layerStyles = layerStylesChanged + layerStylesDeleted;
     const assets = assetsChanged + assetsDeleted;
-    const total = pages + collections + collectionItems + components + layerStyles + assets;
+    const translations = translationsChanged;
+    const total = pages + collections + collectionItems + components + layerStyles + assets + translations;
 
     return noCache({
-      data: { pages, collections, collectionItems, components, layerStyles, assets, total } satisfies PublishPreviewCounts,
+      data: { pages, collections, collectionItems, components, layerStyles, assets, translations, total } satisfies PublishPreviewCounts,
     });
   } catch (error) {
     console.error('Error fetching publish preview:', error);

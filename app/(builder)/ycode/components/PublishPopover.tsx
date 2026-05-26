@@ -20,6 +20,7 @@ interface PublishPreviewCounts {
   components: number;
   layerStyles: number;
   assets: number;
+  translations: number;
   total: number;
 }
 
@@ -31,6 +32,7 @@ const BREAKDOWN_ITEMS: { key: keyof Omit<PublishPreviewCounts, 'total'>; label: 
   { key: 'collectionItems', label: 'Collection items', icon: 'database' },
   { key: 'layerStyles', label: 'Layer styles', icon: 'cube' },
   { key: 'assets', label: 'Assets', icon: 'image' },
+  { key: 'translations', label: 'Translations', icon: 'globe' },
 ];
 
 interface PublishPopoverProps {
