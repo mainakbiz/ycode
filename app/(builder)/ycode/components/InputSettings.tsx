@@ -7,7 +7,7 @@
  * Allows configuring type, placeholder, value, and behavior attributes
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,10 +21,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import SettingsPanel from './SettingsPanel';
+import { findAncestor } from '@/lib/layer-utils';
 import type { Layer } from '@/types';
 
 interface InputSettingsProps {
   layer: Layer | null;
+  allLayers?: Layer[];
   onLayerUpdate: (layerId: string, updates: Partial<Layer>) => void;
 }
 
@@ -41,7 +43,7 @@ const INPUT_TYPES = [
   { value: 'range', label: 'Range' },
 ];
 
-export default function InputSettings({ layer, onLayerUpdate }: InputSettingsProps) {
+export default function InputSettings({ layer, allLayers, onLayerUpdate }: InputSettingsProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   // Check if this is a form input element
@@ -54,6 +56,21 @@ export default function InputSettings({ layer, onLayerUpdate }: InputSettingsPro
   const isCheckboxInput = isInputLayer && layer?.attributes?.type === 'checkbox';
   const isRadioInput = isInputLayer && layer?.attributes?.type === 'radio';
   const isCheckboxOrRadio = isCheckboxInput || isRadioInput;
+
+  // Lock name/type for the password input on the 401 page: when this input
+  // sits inside a password-protected form AND has structural restrictions,
+  // the verify endpoint relies on type=password / name=password.
+  const isLockedPasswordInput = useMemo(() => {
+    if (!layer || !isInputLayer || !allLayers) return false;
+    if (layer.restrictions?.copy !== false || layer.restrictions?.delete !== false) return false;
+    const parentForm = findAncestor(
+      allLayers,
+      layer.id,
+      (candidate) => candidate.name === 'form'
+        && candidate.settings?.form?.form_type === 'password_protected'
+    );
+    return !!parentForm;
+  }, [layer, isInputLayer, allLayers]);
 
   // Get current attribute values
   const attributes = layer?.attributes || {};
@@ -202,6 +219,7 @@ export default function InputSettings({ layer, onLayerUpdate }: InputSettingsPro
                   value={name}
                   onChange={(e) => handleAttributeChange('name', e.target.value)}
                   placeholder="Field"
+                  disabled={isLockedPasswordInput}
                 />
               </div>
             </div>
@@ -214,6 +232,7 @@ export default function InputSettings({ layer, onLayerUpdate }: InputSettingsPro
                   <Select
                     value={inputType}
                     onValueChange={(val) => handleAttributeChange('type', val)}
+                    disabled={isLockedPasswordInput}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -230,6 +249,13 @@ export default function InputSettings({ layer, onLayerUpdate }: InputSettingsPro
                   </Select>
                 </div>
               </div>
+            )}
+
+            {isLockedPasswordInput && (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Name and type are locked because this input gates a password-protected page.
+                Restyle it freely.
+              </p>
             )}
 
             {/* Placeholder - for input and textarea (select placeholder is in SelectOptionsSettings) */}

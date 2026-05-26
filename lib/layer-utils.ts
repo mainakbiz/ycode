@@ -122,6 +122,24 @@ export function canDeleteLayer(layer: Layer): boolean {
 }
 
 /**
+ * Recursively check if a layer tree contains a password-protected form layer.
+ * Used by PageRenderer to decide whether to inject the hardcoded PasswordForm
+ * fallback when the 401 page has been customised without a password form.
+ */
+export function hasPasswordFormLayer(layers: Layer[] | undefined | null): boolean {
+  if (!layers || layers.length === 0) return false;
+  for (const layer of layers) {
+    if (layer.name === 'form' && layer.settings?.form?.form_type === 'password_protected') {
+      return true;
+    }
+    if (layer.children && hasPasswordFormLayer(layer.children)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Get the ancestor layer matching a callback condition
  * Traverses up the tree from the given layer until a matching ancestor is found
  * Uses a flat map for efficient O(1) parent lookups

@@ -3,10 +3,23 @@
 import { useState, FormEvent } from 'react';
 
 /**
- * Password Form Component
+ * Password Form Component (fallback only)
  *
- * A client-side form for entering passwords to access protected pages.
- * Submits to /api/page-auth/verify and handles success/error states.
+ * Modern installs render the password gate as editable layers on the 401
+ * system page (a `form` layer with `settings.form.form_type === 'password_protected'`
+ * containing input/error-alert/submit-button — see `DEFAULT_ERROR_PAGES` in
+ * `lib/page-utils.ts`). LayerRendererPublic wires that form's submit handler
+ * to `/api/page-auth/verify` automatically.
+ *
+ * This standalone client component is kept as a safety net for two cases:
+ *  1. Existing 401 pages that pre-date the editable form (covered by the
+ *     `add_password_form_to_401_page` migration, but the fallback protects
+ *     unmigrated databases).
+ *  2. Customised 401 pages where the user explicitly removed the password form
+ *     layer (despite `restrictions: { copy: false, delete: false }`).
+ *
+ * `PageRenderer` only renders this component when the 401 page tree contains
+ * no password-protected form layer.
  */
 
 export interface PasswordFormProps {

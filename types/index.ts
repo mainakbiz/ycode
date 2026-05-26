@@ -167,7 +167,12 @@ export interface DesignProperties {
   transitions?: TransitionsDesign;
 }
 
+export type FormType = 'standard' | 'password_protected';
+
 export interface FormSettings {
+  // 'password_protected' wires the form to the page-auth verify endpoint and gates access to
+  // password-protected pages; 'standard' (default) submits to /ycode/api/form-submissions.
+  form_type?: FormType;
   success_action?: 'message' | 'redirect'; // What happens on successful submission (default: 'message')
   success_message?: string; // Message shown on successful submission (deprecated - now uses alert child)
   error_message?: string; // Message shown on failed submission (deprecated - now uses alert child)
