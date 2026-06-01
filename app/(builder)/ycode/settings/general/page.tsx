@@ -87,6 +87,10 @@ export default function GeneralSettingsPage() {
   const [timezone, setTimezone] = useState(storedTimezone ?? 'UTC');
   const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
 
+  // Initialize project (site) name from store.
+  const storedSiteName = getSettingByKey('site_name') as string | null;
+  const [siteName, setSiteName] = useState(storedSiteName || '');
+
   // Initialize favicon and web clip from store
   const storedFaviconAssetId = getSettingByKey('favicon_asset_id') as string | null;
   const storedWebClipAssetId = getSettingByKey('web_clip_asset_id') as string | null;
@@ -190,15 +194,32 @@ export default function GeneralSettingsPage() {
 
   // Save website settings
   const saveWebsiteSettings = useCallback(async () => {
+    const trimmedName = siteName.trim();
+    if (!trimmedName) {
+      toast.error('Project name is required');
+      return;
+    }
+
     setIsSavingWebsite(true);
-    await saveSettings({
-      ycode_badge: ycodeBadge,
-      timezone,
-      favicon_asset_id: faviconAssetId || null,
-      web_clip_asset_id: webClipAssetId || null,
-    });
-    setIsSavingWebsite(false);
-  }, [saveSettings, ycodeBadge, timezone, faviconAssetId, webClipAssetId]);
+    try {
+      const success = await saveSettings({
+        site_name: trimmedName,
+        ycode_badge: ycodeBadge,
+        timezone,
+        favicon_asset_id: faviconAssetId || null,
+        web_clip_asset_id: webClipAssetId || null,
+      });
+
+      if (!success) {
+        toast.error(useSettingsStore.getState().error || 'Settings could not be saved. Please try again.');
+        return;
+      }
+
+      toast.success('Settings have been successfully saved');
+    } finally {
+      setIsSavingWebsite(false);
+    }
+  }, [siteName, saveSettings, ycodeBadge, timezone, faviconAssetId, webClipAssetId]);
 
   const handleDetectTimezone = useCallback(() => {
     const detected = getDetectedTimezone();
@@ -309,33 +330,20 @@ export default function GeneralSettingsPage() {
               </div>
 
               <div className="col-span-2 grid grid-cols-2 gap-5">
-                {isCloudVersion() && (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor="project-name">
-                        Project name
-                      </FieldLabel>
-                      <Input
-                        id="project-name"
-                        placeholder="My website"
-                        required
-                      />
-                    </Field>
+                <Field className="col-span-2">
+                  <FieldLabel htmlFor="project-name">
+                    Project name
+                  </FieldLabel>
+                  <Input
+                    id="project-name"
+                    placeholder="My website"
+                    value={siteName}
+                    onChange={(e) => setSiteName(e.target.value)}
+                    required
+                  />
+                </Field>
 
-                    <Field>
-                      <FieldLabel htmlFor="subdomain">
-                        Subdomain
-                      </FieldLabel>
-                      <Input
-                        id="subdomain"
-                        placeholder="website"
-                        required
-                      />
-                    </Field>
-
-                    <FieldSeparator className="col-span-2" />
-                  </>
-                )}
+                <FieldSeparator className="col-span-2" />
 
                 <div className="col-span-2 flex items-center gap-6">
                   <div className="size-28 bg-secondary/20 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
