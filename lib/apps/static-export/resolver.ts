@@ -182,7 +182,7 @@ function renderResolved(
   // For dynamic pages, the stored template may contain `{{FieldName}}`
   // placeholders that need resolution against the current item — mirrors
   // what PageRenderer.tsx does for the live site.
-  const customCode = (page.settings as { custom_code?: { head?: string; body?: string } } | undefined)?.custom_code
+  const customCode = page.settings?.custom_code
   const rawHead = customCode?.head || ''
   const rawBody = customCode?.body || ''
   const shouldResolvePlaceholders =
