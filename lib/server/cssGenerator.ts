@@ -84,7 +84,13 @@ async function getCompiler() {
   if (compilerCache) return compilerCache;
 
   const twPath = join(process.cwd(), 'node_modules/tailwindcss/index.css');
-  const input = await readFile(twPath, 'utf-8');
+  const baseInput = await readFile(twPath, 'utf-8');
+
+  // Register the same custom variants the client/browser generator uses so
+  // state-specific utilities compile server-side too. `current` (&[aria-current])
+  // powers the active-page navigation styling; the `disabled` override extends
+  // the built-in variant to also match `[aria-disabled]`.
+  const input = `${baseInput}\n@custom-variant current (&[aria-current]);\n@custom-variant disabled (&:is(:disabled, [aria-disabled]));\n`;
 
   compilerCache = await compile(input, {
     base: process.cwd(),

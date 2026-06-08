@@ -21,7 +21,7 @@ import { getMapIframeProps, DEFAULT_MAP_SETTINGS, resolveMarkerColor } from '@/l
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/slider-constants';
 import { getDynamicTextContent, getImageUrlFromVariable, getVideoUrlFromVariable, getIframeUrlFromVariable, isFieldVariable, isAssetVariable, isStaticTextVariable, isDynamicTextVariable, getStaticTextContent, getAssetId, resolveDesignStyles } from '@/lib/variable-utils';
 import { getTranslatedAssetId, getTranslatedText } from '@/lib/locale-runtime';
-import { isValidLinkSettings, generateLinkHref, resolveLinkAttrs, isLinkAtCollectionBoundary, type LinkResolutionContext } from '@/lib/link-utils';
+import { isValidLinkSettings, generateLinkHref, resolveLinkAttrs, isLinkAtCollectionBoundary, isLinkToCurrentPage, type LinkResolutionContext } from '@/lib/link-utils';
 import { DEFAULT_ASSETS, buildImageSizes, generateImageSrcset, getOptimizedImageUrl, parseImageDimension } from '@/lib/asset-utils';
 import { resolveInlineVariablesFromData } from '@/lib/inline-variables';
 import { renderRichText, hasBlockElementsWithInlineVariables, getTextStyleClasses, flattenTiptapParagraphs, type RichTextLinkContext, type RenderComponentBlockFn } from '@/lib/text-format-utils';
@@ -747,6 +747,7 @@ const LayerItem: React.FC<{
   const layerLinkContext: LinkResolutionContext = {
     pages,
     folders,
+    pageId,
     collectionItemSlugs,
     collectionItemId: collectionLayerItemId,
     pageCollectionItemId,
@@ -885,6 +886,9 @@ const LayerItem: React.FC<{
         const linkAttrs = resolveLinkAttrs(layer.variables.link, layerLinkContext);
         if (linkAttrs) {
           Object.assign(elementProps, linkAttrs);
+          if (isLinkToCurrentPage(layer.variables.link, layerLinkContext, linkAttrs.href)) {
+            elementProps['aria-current'] = 'page';
+          }
         } else if (isLinkAtCollectionBoundary(layer.variables.link, layerLinkContext)) {
           elementProps['aria-disabled'] = 'true';
           elementProps['data-link-disabled'] = 'true';
@@ -1786,6 +1790,7 @@ const LayerItem: React.FC<{
       content = (
         <a
           {...linkAttrs}
+          {...(isLinkToCurrentPage(linkSettings, layerLinkContext, linkAttrs.href) ? { 'aria-current': 'page' } : {})}
           className="contents"
         >
           {content}
