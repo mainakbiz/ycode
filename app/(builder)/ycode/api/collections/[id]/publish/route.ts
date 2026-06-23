@@ -22,6 +22,7 @@ export const revalidate = 0;
  *       fieldsCount: number;
  *       itemsCount: number;
  *       valuesCount: number;
+ *       assetsCount: number;
  *     };
  *     errors?: string[];
  *   }

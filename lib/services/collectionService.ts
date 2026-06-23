@@ -19,6 +19,8 @@ import { getCollectionById, hardDeleteCollection } from '@/lib/repositories/coll
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import { getItemsByCollectionId, getAllItemsByCollectionId, getItemsByIds } from '@/lib/repositories/collectionItemRepository';
 import { getValueRowsForItems, type PublishValueRow } from '@/lib/repositories/collectionItemValueRepository';
+import { publishAssets } from '@/lib/repositories/assetRepository';
+import { collectItemValueAssetIds } from '@/lib/collection-asset-utils';
 import type { Collection, CollectionField, CollectionItem } from '@/types';
 
 /**
@@ -73,6 +75,7 @@ export interface PublishCollectionResult {
     fieldsCount: number;
     itemsCount: number;
     valuesCount: number;
+    assetsCount: number;
     deletedItemsCount: number;
     deletedItemSlugs: string[];
     renamedItemOldSlugs: string[];
@@ -135,6 +138,7 @@ export async function publishCollectionWithItems(
       fieldsCount: 0,
       itemsCount: 0,
       valuesCount: 0,
+      assetsCount: 0,
       deletedItemsCount: 0,
       deletedItemSlugs: [],
       renamedItemOldSlugs: [],
@@ -196,13 +200,14 @@ export async function publishCollectionWithItems(
 
       // Step 3: Publish selected items
       const itemsStart = performance.now();
-      const { itemsCount, valuesCount, itemsDurationMs, valuesDurationMs, renamedItemOldSlugs, unpublishedItemSlugs } = await publishSelectedItems(
+      const { itemsCount, valuesCount, assetsCount, itemsDurationMs, valuesDurationMs, renamedItemOldSlugs, unpublishedItemSlugs } = await publishSelectedItems(
         collectionId,
         itemIds,
         prefetched,
       );
       result.published.itemsCount = itemsCount;
       result.published.valuesCount = valuesCount;
+      result.published.assetsCount = assetsCount;
       result.published.renamedItemOldSlugs = renamedItemOldSlugs;
       result.published.unpublishedItemSlugs = unpublishedItemSlugs;
       result.timing!.items = {
@@ -457,13 +462,13 @@ async function publishAllFields(
  *
  * @param collectionId - Collection UUID
  * @param itemIds - Optional array of item IDs to publish. If omitted, publishes all items that need publishing
- * @returns Counts and timing of published items and values
+ * @returns Counts and timing of published items, values, and referenced assets
  */
 async function publishSelectedItems(
   collectionId: string,
   itemIds?: string[],
   prefetched?: CollectionPrefetch,
-): Promise<{ itemsCount: number; valuesCount: number; itemsDurationMs: number; valuesDurationMs: number; renamedItemOldSlugs: string[]; unpublishedItemSlugs: string[] }> {
+): Promise<{ itemsCount: number; valuesCount: number; assetsCount: number; itemsDurationMs: number; valuesDurationMs: number; renamedItemOldSlugs: string[]; unpublishedItemSlugs: string[] }> {
   const client = await getSupabaseAdmin();
 
   if (!client) {
@@ -481,7 +486,7 @@ async function publishSelectedItems(
   }
 
   if (itemsToPublish.length === 0) {
-    return { itemsCount: 0, valuesCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs: [] };
+    return { itemsCount: 0, valuesCount: 0, assetsCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs: [] };
   }
 
   // Batch fetch all draft items to publish. When the caller bulk-prefetched the
@@ -494,7 +499,7 @@ async function publishSelectedItems(
     : await getItemsByIds(itemsToPublish, false);
 
   if (draftItems.length === 0) {
-    return { itemsCount: 0, valuesCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs: [] };
+    return { itemsCount: 0, valuesCount: 0, assetsCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs: [] };
   }
 
   // Separate publishable from non-publishable items
@@ -549,7 +554,7 @@ async function publishSelectedItems(
   }
 
   if (publishableItems.length === 0) {
-    return { itemsCount: 0, valuesCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs };
+    return { itemsCount: 0, valuesCount: 0, assetsCount: 0, itemsDurationMs: 0, valuesDurationMs: 0, renamedItemOldSlugs: [], unpublishedItemSlugs };
   }
 
   // Fetch existing published items for comparison (use bulk-prefetched set when available)
@@ -664,7 +669,23 @@ async function publishSelectedItems(
   const valuesCount = await publishItemValuesBatch(itemIdsToPublishValues, draftValues, publishedValues);
   const valuesDurationMs = Math.round(performance.now() - valuesStart);
 
-  return { itemsCount: itemsToUpsert.length, valuesCount, itemsDurationMs, valuesDurationMs, renamedItemOldSlugs, unpublishedItemSlugs };
+  // Publish assets referenced by the published items so newly uploaded images
+  // (e.g. CMS thumbnails or rich-text images) get a published row in the same
+  // operation. Without this, a single collection/item publish leaves the assets
+  // as drafts and the live page renders the default placeholder until a later
+  // full publish eventually publishes them.
+  let assetsCount = 0;
+  try {
+    const assetIds = collectItemValueAssetIds(draftValues);
+    if (assetIds.length > 0) {
+      const assetsResult = await publishAssets(assetIds);
+      assetsCount = assetsResult.count;
+    }
+  } catch {
+    // Non-fatal: asset publishing failure should not roll back item publishing
+  }
+
+  return { itemsCount: itemsToUpsert.length, valuesCount, assetsCount, itemsDurationMs, valuesDurationMs, renamedItemOldSlugs, unpublishedItemSlugs };
 }
 
 /**

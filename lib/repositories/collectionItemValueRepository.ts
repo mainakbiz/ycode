@@ -795,6 +795,21 @@ export async function publishValues(item_id: string): Promise<number> {
   const hash = generateCollectionItemContentHash(draftValues.map(v => ({ field_id: v.field_id, value: v.value })));
   await updateContentHash(item_id, true, hash);
 
+  // Publish assets referenced by this item (e.g. CMS thumbnails or rich-text
+  // images) so they get a published row in the same operation. Without this, a
+  // single-item publish (Set as published / staged item) leaves images as drafts
+  // and the live page renders the default placeholder until a later full publish.
+  try {
+    const { collectItemValueAssetIds } = await import('@/lib/collection-asset-utils');
+    const { publishAssets } = await import('@/lib/repositories/assetRepository');
+    const assetIds = collectItemValueAssetIds(draftValues);
+    if (assetIds.length > 0) {
+      await publishAssets(assetIds);
+    }
+  } catch {
+    // Non-fatal: asset publishing failure should not roll back value publishing
+  }
+
   return draftValues.length;
 }
 
