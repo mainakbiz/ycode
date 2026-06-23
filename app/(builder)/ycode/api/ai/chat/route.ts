@@ -21,6 +21,7 @@ export const maxDuration = 300;
 
 const contentBlockSchema = z.union([
   z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({ type: z.literal('image'), mediaType: z.string(), data: z.string() }),
   z.object({ type: z.literal('tool_use'), id: z.string(), name: z.string(), input: z.record(z.string(), z.unknown()) }),
   z.object({ type: z.literal('tool_result'), toolUseId: z.string(), content: z.string(), isError: z.boolean().optional() }),
 ]);

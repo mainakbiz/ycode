@@ -223,6 +223,15 @@ function toAnthropicBlock(block: AgentContentBlock): Anthropic.ContentBlockParam
   switch (block.type) {
     case 'text':
       return { type: 'text', text: block.text };
+    case 'image':
+      return {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: block.mediaType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+          data: block.data,
+        },
+      };
     case 'tool_use':
       return { type: 'tool_use', id: block.id, name: block.name, input: block.input };
     case 'tool_result':

@@ -15,6 +15,14 @@ export interface AgentTextBlock {
   text: string;
 }
 
+export interface AgentImageBlock {
+  type: 'image';
+  /** MIME type, e.g. "image/png", "image/jpeg", "image/webp", "image/gif". */
+  mediaType: string;
+  /** Base64-encoded image bytes (no data: URL prefix). */
+  data: string;
+}
+
 export interface AgentToolUseBlock {
   type: 'tool_use';
   id: string;
@@ -29,7 +37,11 @@ export interface AgentToolResultBlock {
   isError?: boolean;
 }
 
-export type AgentContentBlock = AgentTextBlock | AgentToolUseBlock | AgentToolResultBlock;
+export type AgentContentBlock =
+  | AgentTextBlock
+  | AgentImageBlock
+  | AgentToolUseBlock
+  | AgentToolResultBlock;
 
 export interface AgentMessage {
   role: AgentRole;

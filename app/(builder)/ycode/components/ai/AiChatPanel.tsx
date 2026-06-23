@@ -10,7 +10,7 @@ import { getLayerName } from '@/lib/layer-display-utils';
 import { findLayerById } from '@/lib/layer-utils';
 import { cn } from '@/lib/utils';
 import { useAiChatStore } from '@/stores/useAiChatStore';
-import type { ChatMessage, SelectedLayerRef } from '@/stores/useAiChatStore';
+import type { ChatMessage, ImageAttachment, SelectedLayerRef } from '@/stores/useAiChatStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
 
@@ -21,6 +21,31 @@ const SUGGESTIONS = [
   'Create a 3-column features section',
   'Add a contact form at the bottom of this page',
 ];
+
+const MAX_IMAGES = 4;
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+/** Read an image File into a base64 attachment, or null if it's unsupported. */
+function fileToImageAttachment(file: File): Promise<ImageAttachment | null> {
+  return new Promise((resolve) => {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      const comma = dataUrl.indexOf(',');
+      if (comma === -1) {
+        resolve(null);
+        return;
+      }
+      resolve({ mediaType: file.type, data: dataUrl.slice(comma + 1), dataUrl });
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
 
 interface AiChatPanelProps {
   embedded?: boolean;
@@ -43,7 +68,9 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
 
   const [input, setInput] = useState('');
   const [contextDetached, setContextDetached] = useState(false);
+  const [images, setImages] = useState<ImageAttachment[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isStreaming = status === 'streaming';
 
@@ -69,10 +96,22 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, status]);
 
+  const addImageFiles = async (files: FileList | File[]) => {
+    const slots = MAX_IMAGES - images.length;
+    if (slots <= 0) return;
+    const converted = (await Promise.all(Array.from(files).slice(0, slots).map(fileToImageAttachment)))
+      .filter((img): img is ImageAttachment => img !== null);
+    if (converted.length > 0) {
+      setImages((prev) => [...prev, ...converted].slice(0, MAX_IMAGES));
+    }
+  };
+
   const submit = (text: string) => {
-    if (!text.trim() || isStreaming) return;
+    if ((!text.trim() && images.length === 0) || isStreaming) return;
     setInput('');
-    void sendMessage(text, { selectedLayers: attachedRefs });
+    const attachment = { selectedLayers: attachedRefs, images };
+    setImages([]);
+    void sendMessage(text, attachment);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -80,6 +119,21 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
       event.preventDefault();
       submit(input);
     }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith('image/'),
+    );
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      void addImageFiles(imageFiles);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) void addImageFiles(event.target.files);
+    event.target.value = '';
   };
 
   return (
@@ -180,15 +234,58 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
             </Button>
           </div>
         )}
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {images.map((image, index) => (
+              <div key={image.dataUrl} className="relative size-12 rounded-md overflow-hidden border group">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image.dataUrl} alt="Attachment"
+                  className="size-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
+                  className="absolute top-0 right-0 bg-background/80 rounded-bl p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label="Remove image"
+                >
+                  <Icon name="x" className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="relative">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES.join(',')}
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+          />
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Ask AI to build or edit your page..."
             rows={2}
-            className="pr-10 resize-none"
+            className="pl-10 pr-10 resize-none"
           />
+          <div className="absolute left-2 bottom-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="size-7 p-0 text-muted-foreground"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={images.length >= MAX_IMAGES}
+              aria-label="Attach image"
+              title={images.length >= MAX_IMAGES ? `Up to ${MAX_IMAGES} images` : 'Attach image'}
+            >
+              <Icon name="image" className="size-3.5" />
+            </Button>
+          </div>
           <div className="absolute right-2 bottom-2">
             {isStreaming ? (
               <Button
@@ -203,7 +300,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
                 size="sm"
                 className="size-7 p-0"
                 onClick={() => submit(input)}
-                disabled={!input.trim()}
+                disabled={!input.trim() && images.length === 0}
                 aria-label="Send"
               >
                 <Icon name="arrowLeft" className="size-3.5 rotate-90" />
@@ -242,8 +339,25 @@ function EmptyState({ onPick, disabled }: { onPick: (text: string) => void; disa
 function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
   if (message.role === 'user') {
     return (
-      <div className="self-end max-w-[85%] rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs whitespace-pre-wrap break-words">
-        {message.text}
+      <div className="self-end max-w-[85%] flex flex-col items-end gap-1.5">
+        {message.images && message.images.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {message.images.map((image) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={image.id}
+                src={image.dataUrl}
+                alt="Attachment"
+                className="size-20 rounded-lg object-cover border"
+              />
+            ))}
+          </div>
+        )}
+        {message.text && (
+          <div className="rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs whitespace-pre-wrap break-words">
+            {message.text}
+          </div>
+        )}
       </div>
     );
   }

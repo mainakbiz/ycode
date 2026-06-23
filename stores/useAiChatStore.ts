@@ -11,11 +11,18 @@ export interface ChatToolCall {
   ok?: boolean;
 }
 
+/** A preview of an image the user attached to a message. */
+export interface ChatImage {
+  id: string;
+  dataUrl: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   toolCalls: ChatToolCall[];
+  images?: ChatImage[];
 }
 
 type ChatStatus = 'idle' | 'streaming';
@@ -33,9 +40,20 @@ export interface SelectedLayerRef {
   name: string;
 }
 
+/** An image the user attached to a message, ready to send to the model. */
+export interface ImageAttachment {
+  /** MIME type, e.g. "image/png". */
+  mediaType: string;
+  /** Base64-encoded bytes (no data: URL prefix). */
+  data: string;
+  /** Full data URL, used only for local preview. */
+  dataUrl: string;
+}
+
 /** Extra context attached to a single message from the composer. */
 export interface MessageAttachment {
   selectedLayers?: SelectedLayerRef[];
+  images?: ImageAttachment[];
 }
 
 interface AiChatActions {
@@ -88,9 +106,17 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
 
   sendMessage: async (text: string, attachment?: MessageAttachment) => {
     const trimmed = text.trim();
-    if (!trimmed || get().status === 'streaming') return;
+    const images = attachment?.images ?? [];
+    if ((!trimmed && images.length === 0) || get().status === 'streaming') return;
 
-    const userMessage: ChatMessage = { id: newId(), role: 'user', text: trimmed, toolCalls: [] };
+    const promptText = trimmed || 'Use the attached image(s) as a reference for what to build.';
+    const userMessage: ChatMessage = {
+      id: newId(),
+      role: 'user',
+      text: trimmed,
+      toolCalls: [],
+      images: images.length > 0 ? images.map((img) => ({ id: newId(), dataUrl: img.dataUrl })) : undefined,
+    };
     const assistantMessage: ChatMessage = { id: newId(), role: 'assistant', text: '', toolCalls: [] };
 
     // History to send: prior text-bearing turns plus this new user message.
@@ -107,6 +133,16 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const editor = useEditorStore.getState();
     abortController = new AbortController();
 
+    // The new user turn carries text plus any attached images as content blocks;
+    // prior turns are sent as plain text (history images are not re-sent).
+    const userContent =
+      images.length > 0
+        ? [
+          { type: 'text' as const, text: promptText },
+          ...images.map((img) => ({ type: 'image' as const, mediaType: img.mediaType, data: img.data })),
+        ]
+        : promptText;
+
     const patchAssistant = (updater: (message: ChatMessage) => ChatMessage) => {
       set((state) => ({
         messages: state.messages.map((message) =>
@@ -120,7 +156,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...history, { role: 'user', content: trimmed }],
+          messages: [...history, { role: 'user', content: userContent }],
           pageId: editor.currentPageId,
           selectedLayers: attachment?.selectedLayers ?? [],
         }),
