@@ -1,5 +1,6 @@
 import { SYSTEM_INSTRUCTIONS } from '@/lib/mcp/instructions';
 import { DEFAULT_MAX_TOKENS, MAX_TOOL_TURNS } from '@/lib/agent/config';
+import { compactToolResult } from '@/lib/agent/tools/compact-result';
 import { getAgentToolMap, getAgentTools } from '@/lib/agent/tools/registry';
 
 import type {
@@ -168,7 +169,8 @@ async function executeTool(
     const content = result.content
       .map((part) => (typeof part.text === 'string' ? part.text : JSON.stringify(part)))
       .join('\n');
-    return { type: 'tool_result', toolUseId: call.id, content: content || 'OK', isError: result.isError };
+    const compacted = compactToolResult(call.name, content || 'OK');
+    return { type: 'tool_result', toolUseId: call.id, content: compacted, isError: result.isError };
   } catch (error) {
     return {
       type: 'tool_result',
@@ -193,6 +195,17 @@ const AGENT_POLICY = [
   'Do not call any publish tool and do not tell the user their changes are live. Leave everything as drafts.',
   'After making edits, briefly summarise what you changed and remind the user they can publish when ready.',
 ].join(' ');
+
+/**
+ * Tells the model how to read get_layers, which we compact before returning it
+ * (see tools/compact-result.ts). Without this it may look for a `design` field
+ * that we strip; the compiled `classes` string is the source of truth instead.
+ */
+const TOOL_OUTPUT_NOTE =
+  'get_layers returns a compact tree: each node has id, type, optional name (custom name), ' +
+  'text (current text content), classes (the live Tailwind classes — your source of truth for current styling), ' +
+  'tag, hidden, componentInstance, and children. The verbose `design` object is omitted; read current styling from `classes`. ' +
+  'To change styling, call update_layer_design with only the categories you want — it merges into existing design, so you never need to resend the full design.';
 
 function buildSystemPrompt(context?: AgentEditorContext): string {
   const lines: string[] = [];
@@ -237,7 +250,7 @@ function buildSystemPrompt(context?: AgentEditorContext): string {
     lines.push(`The user referenced these URLs: ${urls}. You cannot browse the web, so do not invent their contents — use them as link destinations or literal content. If the user wants you to replicate a design from a URL, ask them to paste a screenshot instead.`);
   }
 
-  let prompt = `${SYSTEM_INSTRUCTIONS}\n\n## In-app agent policy\n\n${AGENT_POLICY}`;
+  let prompt = `${SYSTEM_INSTRUCTIONS}\n\n## In-app agent policy\n\n${AGENT_POLICY}\n\n## Tool output format\n\n${TOOL_OUTPUT_NOTE}`;
   if (lines.length > 0) {
     prompt += `\n\n## Current editor context\n\n${lines.join('\n')}`;
   }
