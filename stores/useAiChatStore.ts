@@ -459,6 +459,7 @@ export const useAiChatStore = create<AiChatStore>()(
         stop: () => {
           abortController?.abort();
           abortController = null;
+          clearAiActiveLayerIds();
           set({ status: 'idle' });
         },
 
@@ -471,6 +472,7 @@ export const useAiChatStore = create<AiChatStore>()(
             await runTurn(text, attachment, 0);
           } finally {
             abortController = null;
+            clearAiActiveLayerIds();
             // Fold the just-updated messages into the history list so the chat
             // dropdown shows an up-to-date title and timestamp.
             set((state) => ({ status: 'idle', chats: commitActiveChat(state) }));
@@ -540,6 +542,52 @@ function appendTextPart(parts: ChatMessagePart[] | undefined, text: string): Cha
   return next;
 }
 
+/**
+ * Tool-input keys whose string values reference a layer in the page tree.
+ * Used to light up the canvas shimmer overlay on the layers a tool touches.
+ */
+const LAYER_ID_INPUT_KEYS = new Set(['layer_id', 'parent_layer_id', 'new_parent_id', 'anchor_layer_id']);
+
+/** Recursively collect every layer ID referenced by a tool call's input
+ * (handles nested `operations` arrays from `batch_operations`). */
+function collectLayerIds(input: unknown): string[] {
+  const ids = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+    } else if (value && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof child === 'string' && LAYER_ID_INPUT_KEYS.has(key)) {
+          ids.add(child);
+        } else {
+          walk(child);
+        }
+      }
+    }
+  };
+  walk(input);
+  return [...ids];
+}
+
+/** Layer IDs per in-flight tool call (cleared as each result arrives). */
+const inFlightToolLayerIds = new Map<string, string[]>();
+
+/** Push the union of all in-flight layer IDs to the editor store so the canvas
+ * overlay can shimmer the layers the agent is currently working on. */
+function syncAiActiveLayerIds(): void {
+  const union = new Set<string>();
+  for (const ids of inFlightToolLayerIds.values()) {
+    for (const id of ids) union.add(id);
+  }
+  useEditorStore.getState().setAiActiveLayerIds([...union]);
+}
+
+/** Clear all AI activity highlights (turn ended or aborted). */
+function clearAiActiveLayerIds(): void {
+  inFlightToolLayerIds.clear();
+  useEditorStore.getState().setAiActiveLayerIds([]);
+}
+
 function applyEvent(
   event: RuntimeEvent,
   patchAssistant: (updater: (message: ChatMessage) => ChatMessage) => void,
@@ -553,7 +601,12 @@ function applyEvent(
         parts: appendTextPart(m.parts, event.text),
       }));
       break;
-    case 'tool_call':
+    case 'tool_call': {
+      const layerIds = collectLayerIds(event.input);
+      if (layerIds.length > 0) {
+        inFlightToolLayerIds.set(event.id, layerIds);
+        syncAiActiveLayerIds();
+      }
       patchAssistant((m) => {
         const call: ChatToolCall = { id: event.id, name: event.name };
         return {
@@ -563,7 +616,11 @@ function applyEvent(
         };
       });
       break;
+    }
     case 'tool_result':
+      if (inFlightToolLayerIds.delete(event.id)) {
+        syncAiActiveLayerIds();
+      }
       patchAssistant((m) => ({
         ...m,
         toolCalls: m.toolCalls.map((call) => (call.id === event.id ? { ...call, ok: event.ok } : call)),

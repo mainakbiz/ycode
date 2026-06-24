@@ -54,6 +54,7 @@ import { useCanvasTextEditorStore } from '@/stores/useCanvasTextEditorStore';
 // 4b. Internal components
 import Canvas from './Canvas';
 import { CollectionFieldSelector } from './CollectionFieldSelector';
+import AiActivityOverlay from '@/components/AiActivityOverlay';
 import SelectionOverlay from '@/components/SelectionOverlay';
 import RichTextLinkPopover from './RichTextLinkPopover';
 import PageSelector from './PageSelector';
@@ -2520,6 +2521,15 @@ const CenterCanvas = React.memo(function CenterCanvas({
             zoom={zoom}
             activeSublayerIndex={activeSublayerIndex}
             activeListItemIndex={activeListItemIndex}
+          />
+        )}
+
+        {/* AI activity overlay - shimmering outlines on layers the agent is editing */}
+        {!isPreviewMode && activeSidebarTab !== 'pages' && canvasIframeElement && (
+          <AiActivityOverlay
+            iframeElement={canvasIframeElement}
+            containerElement={scrollContainerRef.current}
+            zoom={zoom}
           />
         )}
 

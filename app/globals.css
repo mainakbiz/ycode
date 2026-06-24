@@ -70,6 +70,28 @@
   }
 }
 
+/* Shimmering outline drawn over canvas layers the AI agent is actively editing.
+   Uses the mask "gradient border" trick: the element box minus its content-box
+   leaves only the padding ring, which we paint with a base violet tint plus a
+   moving highlight band (animated via background-position) for the shimmer. */
+.ai-activity-outline {
+  border-radius: 3px;
+  padding: 1.5px;
+  background:
+    linear-gradient(110deg, transparent 30%, rgba(196, 181, 253, 0.95) 50%, transparent 70%),
+    rgba(139, 92, 246, 0.4);
+  background-size: 220% 100%, 100% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);

@@ -88,6 +88,7 @@ interface EditorActions {
   canUndo: () => boolean;
   canRedo: () => boolean;
   setInteractionHighlights: (triggerIds: string[], targetIds: string[]) => void;
+  setAiActiveLayerIds: (ids: string[]) => void;
   setActiveInteraction: (triggerId: string | null, targetIds: string[]) => void;
   clearActiveInteraction: () => void;
   openCollectionItemSheet: (collectionId: string, itemId: string) => void;
@@ -140,6 +141,8 @@ interface EditorStoreWithHistory extends EditorState {
   builderDataPreloaded: boolean;
   interactionTriggerLayerIds: string[];
   interactionTargetLayerIds: string[];
+  /** Layer IDs the AI agent is currently editing (drives the canvas shimmer overlay) */
+  aiActiveLayerIds: string[];
   activeInteractionTriggerLayerId: string | null;
   activeInteractionTargetLayerIds: string[];
   activeTextStyleKey: string | null; // Currently active text style (e.g., 'bold', 'italic')
@@ -239,6 +242,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   builderDataPreloaded: false,
   interactionTriggerLayerIds: [],
   interactionTargetLayerIds: [],
+  aiActiveLayerIds: [],
   activeInteractionTriggerLayerId: null,
   activeInteractionTargetLayerIds: [],
   activeTextStyleKey: null,
@@ -537,6 +541,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setInteractionHighlights: (triggerIds, targetIds) => set({
     interactionTriggerLayerIds: triggerIds,
     interactionTargetLayerIds: targetIds,
+  }),
+
+  setAiActiveLayerIds: (ids) => set((state) => {
+    // Bail out when nothing changes so the canvas overlay doesn't re-run its
+    // outline measurement on every identical sync from the chat store.
+    if (state.aiActiveLayerIds.length === ids.length &&
+        state.aiActiveLayerIds.every((id, i) => id === ids[i])) {
+      return state;
+    }
+    return { aiActiveLayerIds: ids };
   }),
 
   setActiveInteraction: (triggerId, targetIds) => set({
