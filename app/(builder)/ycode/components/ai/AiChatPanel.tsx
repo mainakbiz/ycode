@@ -22,7 +22,7 @@ import { getLayerName } from '@/lib/layer-display-utils';
 import { findLayerById } from '@/lib/layer-utils';
 import { cn } from '@/lib/utils';
 import { useAiChatStore } from '@/stores/useAiChatStore';
-import type { ChatMessage, ChatSession, ImageAttachment, Mention, SelectedLayerRef, SessionUsage } from '@/stores/useAiChatStore';
+import type { ChatMessage, ChatMessagePart, ChatSession, ChatToolCall, ImageAttachment, Mention, SelectedLayerRef, SessionUsage } from '@/stores/useAiChatStore';
 import { useCollectionsStore } from '@/stores/useCollectionsStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
@@ -790,25 +790,20 @@ function MessageBubble({
 
   return (
     <div className="flex flex-col gap-2">
-      {message.toolCalls.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {message.toolCalls.map((call) => (
-            <div key={call.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-              {call.ok === undefined ? (
-                <Spinner className="size-3" />
-              ) : (
-                <Icon
-                  name={call.ok ? 'check' : 'x'}
-                  className={cn('size-3', call.ok ? 'text-foreground' : 'text-destructive')}
-                />
-              )}
-              <span>{toolCallLabel(call.name)}</span>
+      {message.parts && message.parts.length > 0 ? (
+        <MessageParts parts={message.parts} />
+      ) : (
+        <>
+          {message.toolCalls.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {message.toolCalls.map((call) => (
+                <ToolCallRow key={call.id} call={call} />
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+          {message.text && <MarkdownText text={message.text} />}
+        </>
       )}
-
-      {message.text && <MarkdownText text={message.text} />}
 
       {isEmpty && isStreaming && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -817,5 +812,58 @@ function MessageBubble({
         </div>
       )}
     </div>
+  );
+}
+
+function ToolCallRow({ call }: { call: ChatToolCall }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      {call.ok === undefined ? (
+        <Spinner className="size-3" />
+      ) : (
+        <Icon
+          name={call.ok ? 'check' : 'x'}
+          className={cn('size-3', call.ok ? 'text-foreground' : 'text-destructive')}
+        />
+      )}
+      <span>{toolCallLabel(call.name)}</span>
+    </div>
+  );
+}
+
+/**
+ * Render an assistant turn's text and tool calls in the order they streamed in.
+ * Consecutive tool calls are grouped into a single tight checklist so they read
+ * as one step, while text fragments render as separate markdown blocks.
+ */
+function MessageParts({ parts }: { parts: ChatMessagePart[] }) {
+  const groups: Array<{ type: 'tools'; calls: ChatToolCall[] } | { type: 'text'; text: string }> = [];
+  for (const part of parts) {
+    if (part.type === 'tool') {
+      const last = groups[groups.length - 1];
+      if (last && last.type === 'tools') {
+        last.calls.push(part.call);
+      } else {
+        groups.push({ type: 'tools', calls: [part.call] });
+      }
+    } else if (part.text) {
+      groups.push({ type: 'text', text: part.text });
+    }
+  }
+
+  return (
+    <>
+      {groups.map((group, index) =>
+        group.type === 'tools' ? (
+          <div key={index} className="flex flex-col gap-1">
+            {group.calls.map((call) => (
+              <ToolCallRow key={call.id} call={call} />
+            ))}
+          </div>
+        ) : (
+          <MarkdownText key={index} text={group.text} />
+        ),
+      )}
+    </>
   );
 }

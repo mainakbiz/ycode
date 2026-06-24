@@ -23,6 +23,7 @@ import { useEffect, useState, useMemo, useRef, useCallback, Suspense, lazy } fro
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 // 2. Internal components
+import AiChatPanel from '../components/ai/AiChatPanel';
 import CenterCanvas from '../components/CenterCanvas';
 import HeaderBar from '../components/HeaderBar';
 import LeftSidebar from '../components/LeftSidebar';
@@ -2289,6 +2290,17 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
               <Suspense fallback={null}>
                 <CMS />
               </Suspense>
+              {!isEditor && (
+                <div className="w-64 shrink-0 bg-background border-l flex flex-col h-full overflow-hidden">
+                  <div className="px-4 pt-4 shrink-0">
+                    <div className="flex h-8 items-center">
+                      <span className="text-xs font-medium">Agent</span>
+                    </div>
+                    <hr className="mt-4" />
+                  </div>
+                  <AiChatPanel embedded />
+                </div>
+              )}
             </div>
 
             {/* Design View - kept mounted for instant switching */}

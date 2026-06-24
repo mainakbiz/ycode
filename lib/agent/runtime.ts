@@ -58,6 +58,8 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
 
   const messages: AgentMessage[] = [...options.messages];
   const usage = new UsageTotals();
+  let totalToolCalls = 0;
+  let noOpCorrectionUsed = false;
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
     const assistantBlocks: AgentContentBlock[] = [];
@@ -89,8 +91,17 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
     }
     assistantBlocks.push(...toolUses);
     messages.push({ role: 'assistant', content: assistantBlocks });
+    totalToolCalls += toolUses.length;
 
     if (toolUses.length === 0) {
+      // Safety net: the model ended the run without ever calling a tool but its
+      // reply claims the work is done ("saved as drafts…"). Nudge it once to
+      // actually perform the edits rather than leaving the user stuck.
+      if (!noOpCorrectionUsed && totalToolCalls === 0 && claimsCompletionWithoutEdits(text)) {
+        noOpCorrectionUsed = true;
+        messages.push({ role: 'user', content: [{ type: 'text', text: NO_OP_CORRECTION }] });
+        continue;
+      }
       usage.log(model, turn + 1);
       yield usage.toEvent();
       yield { type: 'done', stopReason };
@@ -193,7 +204,8 @@ async function executeTool(
 const AGENT_POLICY = [
   'Never publish. The user controls publishing — they review your changes on the canvas and click the Publish button when ready.',
   'Do not call any publish tool and do not tell the user their changes are live. Leave everything as drafts.',
-  'After making edits, briefly summarise what you changed and remind the user they can publish when ready.',
+  'Only describe edits you actually performed with tools. If you intend to make changes, call the tools to make them in the same turn — never reply that something is done, saved, or drafted unless you have already called the tools that did it.',
+  'When you have finished making edits, briefly summarise what you changed and remind the user they can publish when ready. If you have not made any edits yet, do not send that summary — make the edits first (or ask one specific clarifying question if the request is unclear).',
 ].join(' ');
 
 /**
@@ -206,6 +218,34 @@ const TOOL_OUTPUT_NOTE =
   'text (current text content), classes (the live Tailwind classes — your source of truth for current styling), ' +
   'tag, hidden, componentInstance, and children. The verbose `design` object is omitted; read current styling from `classes`. ' +
   'To change styling, call update_layer_design with only the categories you want — it merges into existing design, so you never need to resend the full design.';
+
+/**
+ * Sent back to the model when it ends a turn claiming the work is done but never
+ * called a single tool — a recurring failure where it jumps straight to the
+ * "saved as drafts…" summary having changed nothing. Forces it to either do the
+ * work or ask, instead of leaving the user stuck with a false completion.
+ */
+const NO_OP_CORRECTION =
+  'You replied as if the work is finished, but you have not called any tools, so nothing has actually changed on the page. ' +
+  'Perform the requested edits now using the appropriate tools (e.g. add_layout, batch_operations, update_layer_design, update_layer_text). ' +
+  'If you genuinely need to inspect the page first, call get_layers or list_pages; if the request is unclear, ask one specific clarifying question instead of summarising. ' +
+  'Never say anything was saved, drafted, or changed until you have actually made the change with a tool.';
+
+/**
+ * Whether assistant text reads like a "the work is done" claim. Used only to
+ * detect the no-op failure above, so it is gated on the turn having made zero
+ * tool calls. The closing summary the model is told to produce after edits
+ * always mentions drafts/publishing, which is the strongest tell.
+ */
+function claimsCompletionWithoutEdits(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/\b(drafts?|publish|reflow)\b/i.test(trimmed)) return true;
+  if (/\b(i['’]ve|i have)\b[\s\S]{0,40}\b(added|updated|created|changed|applied|made|built|set|saved)\b/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
 
 function buildSystemPrompt(context?: AgentEditorContext): string {
   const lines: string[] = [];
