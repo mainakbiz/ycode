@@ -7,7 +7,7 @@ import LayerLockIndicator from '@/components/collaboration/LayerLockIndicator';
 import EditingIndicator from '@/components/collaboration/EditingIndicator';
 import { useCollaborationPresenceStore, getResourceLockKey, RESOURCE_TYPES } from '@/stores/useCollaborationPresenceStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import type { Layer, Locale, ComponentVariable, FormSettings, LinkSettings, Breakpoint, CollectionItemWithValues, CollectionField, Component } from '@/types';
+import type { Layer, Locale, ComponentVariable, FormSettings, LinkSettings, Breakpoint, CollectionItemWithValues, CollectionField, Component, DynamicTextVariable, DynamicRichTextVariable } from '@/types';
 import type { UseLiveLayerUpdatesReturn } from '@/hooks/use-live-layer-updates';
 import type { UseLiveComponentUpdatesReturn } from '@/hooks/use-live-component-updates';
 import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextEditable, isTextContentLayer, isRichTextLayer, getCollectionVariable, evaluateVisibility, findAncestorByName, filterDisabledSliderLayers, getLayerCmsFieldBinding, findLayerById, applyCustomAttributes } from '@/lib/layer-utils';
@@ -27,6 +27,7 @@ import { buildImageSizes, generateImageSrcset, getOptimizedImageUrl, getSvgAspec
 import { useEditorStore } from '@/stores/useEditorStore';
 import { toast } from 'sonner';
 import { resolveInlineVariablesFromData } from '@/lib/inline-variables';
+import { hasPaginationVariables, paginationTextVariableToTemplate, resolvePaginationTextVariable } from '@/lib/pagination-text-utils';
 import { renderRichText, hasBlockElementsWithInlineVariables, getTextStyleClasses, flattenTiptapParagraphs, type RichTextLinkContext, type RenderComponentBlockFn } from '@/lib/text-format-utils';
 import { hasComponentOrVariable, extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
 import LayerContextMenu from '@/app/(builder)/ycode/components/LayerContextMenu';
@@ -1022,17 +1023,33 @@ const LayerItemImpl: React.FC<{
 
   const computedPaginationText = useMemo<string | undefined>(() => {
     if (!paginationContextTarget || paginationContextTarget.kind === 'wrapper') return undefined;
+    // While actively editing, let the text editor render the template (with chips).
+    if (isEditing) return undefined;
+    // Not yet resolved (loading / pagination off): render the layer's own stored
+    // content instead of blanking it, so legacy "Page X of Y" text still shows.
     if (paginationDisplayTotal === undefined) return undefined;
     if (paginationDisplayTotal <= 0) return '';
     const pagination = getCollectionVariable(paginationLinkedCollectionLayer!)?.pagination;
     const itemsPerPage = pagination?.items_per_page || 10;
-    if (paginationContextTarget.kind === 'count') {
-      const shown = Math.min(itemsPerPage, paginationDisplayTotal);
-      return `Showing ${shown} of ${paginationDisplayTotal}`;
+    const numbers = {
+      shown: Math.min(itemsPerPage, paginationDisplayTotal),
+      total: paginationDisplayTotal,
+      current: 1,
+      pages: Math.max(1, Math.ceil(paginationDisplayTotal / itemsPerPage)),
+    };
+    const textVar = layer.variables?.text;
+    // Modern templates embed `pagination` chips — resolve them to numbers.
+    if (hasPaginationVariables(textVar)) {
+      return paginationTextVariableToTemplate(
+        resolvePaginationTextVariable(textVar as DynamicTextVariable | DynamicRichTextVariable, numbers)
+      );
     }
-    const totalPages = Math.max(1, Math.ceil(paginationDisplayTotal / itemsPerPage));
-    return `Page 1 of ${totalPages}`;
-  }, [paginationContextTarget, paginationLinkedCollectionLayer, paginationDisplayTotal]);
+    // Legacy content without chips: keep the hardcoded text.
+    if (paginationContextTarget.kind === 'count') {
+      return `Showing ${numbers.shown} of ${numbers.total}`;
+    }
+    return `Page ${numbers.current} of ${numbers.pages}`;
+  }, [paginationContextTarget, paginationLinkedCollectionLayer, paginationDisplayTotal, isEditing, layer.variables?.text]);
 
   // Resolve text and image URLs with field binding support
   const textContent = (() => {

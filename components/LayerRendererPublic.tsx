@@ -15,7 +15,7 @@
 
 import React, { useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import type { Layer, Locale, FormSettings, Component, DesignColorVariable, PasswordProtectionContext } from '@/types';
+import type { Layer, Locale, FormSettings, Component, DesignColorVariable, PasswordProtectionContext, DynamicTextVariable, DynamicRichTextVariable } from '@/types';
 import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextContentLayer, getCollectionVariable, filterDisabledSliderLayers, applyCustomAttributes } from '@/lib/layer-utils';
 import { getMapIframeProps, DEFAULT_MAP_SETTINGS, resolveMarkerColor } from '@/lib/map-utils';
 import { HTML_TO_REACT_ATTRS } from '@/lib/parse-head-html';
@@ -25,6 +25,7 @@ import { getTranslatedAssetId, getTranslatedText } from '@/lib/locale-runtime';
 import { isValidLinkSettings, generateLinkHref, resolveLinkAttrs, isLinkAtCollectionBoundary, isLinkToCurrentPage, type LinkResolutionContext } from '@/lib/link-utils';
 import { DEFAULT_ASSETS, buildImageSizes, generateImageSrcset, getOptimizedImageUrl, getSvgAspectRatioStyle, parseImageDimension } from '@/lib/asset-utils';
 import { resolveInlineVariablesFromData } from '@/lib/inline-variables';
+import { getPaginationLayerKind, paginationTextVariableToTemplate, resolvePaginationTextVariable } from '@/lib/pagination-text-utils';
 import { mergeGlobalsIntoFieldData, type GlobalFieldMeta } from '@/lib/collection-field-utils';
 import { extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
 import { renderRichText, hasBlockElementsWithInlineVariables, getTextStyleClasses, flattenTiptapParagraphs, type RichTextLinkContext, type RenderComponentBlockFn } from '@/lib/text-format-utils';
@@ -465,7 +466,14 @@ const LayerItem: React.FC<{
 
   // Check if we need to override the tag for rich text with block elements
   // Tags like <p>, <h1>-<h6> cannot contain block elements like <ul>/<ol>
-  const textVariable = layer.variables?.text;
+  // Pagination count/info layers resolve their `pagination` inline variables to
+  // live numbers here (after translation injection), keeping the words editable.
+  const rawTextVariable = layer.variables?.text;
+  const paginationKind = getPaginationLayerKind(layer.id);
+  const paginationNumbers = layer._paginationNumbers;
+  const textVariable = (paginationKind && paginationNumbers && rawTextVariable)
+    ? resolvePaginationTextVariable(rawTextVariable as DynamicTextVariable | DynamicRichTextVariable, paginationNumbers)
+    : rawTextVariable;
   let useSpanForParagraphs = false;
 
   // Detect block-level expansion (lists, tables, headings, embedded components,
@@ -1012,6 +1020,13 @@ const LayerItem: React.FC<{
     // Apply custom attributes from settings (map HTML attr names to JSX equivalents)
     if (layer.settings?.customAttributes) {
       applyCustomAttributes(elementProps, layer.settings.customAttributes);
+    }
+
+    // Pagination count/info layers: expose the (translated) template so the
+    // client runtime can re-resolve the numbers after load-more/filter/page nav.
+    if (paginationKind && paginationNumbers) {
+      const template = paginationTextVariableToTemplate(rawTextVariable);
+      if (template) elementProps['data-pagination-template'] = template;
     }
 
     // Select with placeholder: set defaultValue so React shows the placeholder option

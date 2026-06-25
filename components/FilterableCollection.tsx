@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from
 import { useFilterStore } from '@/stores/useFilterStore';
 import { LOAD_MORE_APPENDED_ATTR } from '@/components/LoadMoreCollection';
 import { hasDynamicDateRule } from '@/lib/collection-field-utils';
+import { resolvePaginationString } from '@/lib/pagination-text-utils';
 import type { ConditionalVisibility, Layer } from '@/types';
 
 interface FilterableCollectionProps {
@@ -523,7 +524,10 @@ export default function FilterableCollection({
       if (ssrPaginationTextRef.current === null) {
         ssrPaginationTextRef.current = infoEl.textContent || '';
       }
-      infoEl.textContent = `Page ${page} of ${totalPages}`;
+      const template = infoEl.getAttribute('data-pagination-template');
+      infoEl.textContent = template
+        ? resolvePaginationString(template, { shown: 0, total: 0, current: page, pages: totalPages })
+        : `Page ${page} of ${totalPages}`;
     }
 
     const prevBtn = wrapper.querySelector(`[data-pagination-action="prev"]`) as HTMLElement | null;
@@ -568,7 +572,11 @@ export default function FilterableCollection({
       if (ssrCountTextRef.current === null) {
         ssrCountTextRef.current = countEl.textContent || '';
       }
-      countEl.textContent = `Showing ${loaded} of ${total}`;
+      const template = countEl.getAttribute('data-pagination-template');
+      const shown = Math.min(loaded, total);
+      countEl.textContent = template
+        ? resolvePaginationString(template, { shown, total, current: 1, pages: 1 })
+        : `Showing ${shown} of ${total}`;
     }
 
     const loadMoreBtn = wrapper.querySelector(`[data-pagination-action="load_more"]`) as HTMLElement | null;

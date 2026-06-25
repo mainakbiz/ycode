@@ -10,6 +10,7 @@ import { isDateFieldType } from '@/lib/collection-field-utils';
 import { formatDateInTimezone } from '@/lib/date-format-utils';
 import { extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
 import { formatDateWithPreset, formatNumberWithPreset } from '@/lib/variable-format-utils';
+import { PAGINATION_VARIABLE_LABELS } from '@/lib/pagination-text-utils';
 
 /**
  * Format a field value for display based on field type
@@ -170,6 +171,9 @@ export function getVariableLabel(
     }
 
     return rootField?.name || '[Deleted Field]';
+  }
+  if (variable.type === 'pagination' && variable.data?.key) {
+    return PAGINATION_VARIABLE_LABELS[variable.data.key] || 'Pagination';
   }
   return variable.type;
 }

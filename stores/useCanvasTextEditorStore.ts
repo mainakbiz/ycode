@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 import type { Editor } from '@tiptap/react';
-import type { FieldVariable } from '@/types';
+import type { InlineVariable } from '@/types';
 import { getVariableLabel } from '@/lib/cms-variables-utils';
 import type { CollectionField } from '@/types';
 import { useEditorStore } from './useEditorStore';
@@ -78,7 +78,7 @@ interface CanvasTextEditorActions {
   focusEditor: () => void;
   /** Add a field variable at the current cursor position */
   addFieldVariable: (
-    variableData: FieldVariable,
+    variableData: InlineVariable,
     fields?: CollectionField[],
     allFields?: Record<string, CollectionField[]>
   ) => void;

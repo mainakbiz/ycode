@@ -110,6 +110,19 @@ export default function LocalizationContent({ children }: LocalizationContentPro
     return buildFieldGroupsForLayer(layerId, layers, page || null, allFields, collections);
   };
 
+  /**
+   * Resolve the layer behind a translation item so the editor gets layer context
+   * (e.g. to expose pagination variables for count/info layers).
+   */
+  const findLayerForTranslationItem = (
+    item: TranslatableItem,
+    layers: Layer[],
+  ): Layer | null => {
+    const match = item.content_key.match(/^layer:([^:]+):/);
+    if (!match) return null;
+    return findLayerById(layers, match[1]) || null;
+  };
+
   // URL management
   const router = useRouter();
   const pathname = usePathname();
@@ -665,6 +678,7 @@ export default function LocalizationContent({ children }: LocalizationContentPro
                 </InputGroup>
               </div>
 
+              {/*
               <div className="ml-auto">
                 <Button
                   size="sm"
@@ -674,6 +688,7 @@ export default function LocalizationContent({ children }: LocalizationContentPro
                   Auto-translate
                 </Button>
               </div>
+              */}
             </div>
 
             {/* Loading state */}
@@ -785,6 +800,7 @@ export default function LocalizationContent({ children }: LocalizationContentPro
                                     updateTranslationStatus={updateTranslationStatus}
                                     deleteTranslation={deleteTranslation}
                                     fieldGroups={buildFieldGroupsForTranslationItem(item, layers, page)}
+                                    layer={findLayerForTranslationItem(item, layers)}
                                     allFields={allFields}
                                     collections={collections}
                                     pages={storePages}
@@ -935,6 +951,7 @@ export default function LocalizationContent({ children }: LocalizationContentPro
                                   updateTranslationStatus={updateTranslationStatus}
                                   deleteTranslation={deleteTranslation}
                                   fieldGroups={buildFieldGroupsForTranslationItem(item, layers)}
+                                  layer={findLayerForTranslationItem(item, layers)}
                                   allFields={allFields}
                                   collections={collections}
                                 />

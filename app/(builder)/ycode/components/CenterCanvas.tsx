@@ -68,6 +68,7 @@ import { getCollectionVariable, canDeleteLayer, findLayerById, findParentCollect
 import { CANVAS_BORDER, CANVAS_PADDING, updateViewportOverrides } from '@/lib/canvas-utils';
 import { BREAKPOINTS } from '@/lib/breakpoint-utils';
 import { buildFieldGroupsForLayer, flattenFieldGroups, filterFieldGroupsByType, SIMPLE_TEXT_FIELD_TYPES } from '@/lib/collection-field-utils';
+import { getPaginationLayerKind, PAGINATION_VARIABLE_LABELS, type PaginationVariableKey } from '@/lib/pagination-text-utils';
 import { buildFieldVariableData } from '@/lib/variable-format-utils';
 import { getRichTextValue } from '@/lib/tiptap-utils';
 import { DropContainerIndicator, DropLineIndicator } from '@/components/DropIndicators';
@@ -79,7 +80,7 @@ import { setDragCursor, clearDragCursor } from '@/lib/drag-cursor';
 import type { Layer, Page, CollectionField, Asset } from '@/types';
 import {
   DropdownMenu,
-  DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut,
+  DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
@@ -1369,6 +1370,14 @@ const CenterCanvas = React.memo(function CenterCanvas({
     [fieldGroups],
   );
 
+  // Pagination count/info layers expose dynamic number variables to insert.
+  const paginationVariableKeys = useMemo<PaginationVariableKey[]>(() => {
+    const kind = getPaginationLayerKind(editingLayerId);
+    if (kind === 'count') return ['shown', 'total'];
+    if (kind === 'info') return ['current', 'pages'];
+    return [];
+  }, [editingLayerId]);
+
   // Create assets map for Canvas (asset ID -> asset)
   const assetsMap = useMemo(() => {
     const map: Record<string, Asset> = {};
@@ -2434,7 +2443,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
           </ToggleGroup>
 
           {/* Inline Variable Button */}
-          {textFieldGroups.length > 0 && (
+          {(textFieldGroups.length > 0 || paginationVariableKeys.length > 0) && (
             <ToggleGroup
               type="single"
               size="xs"
@@ -2456,12 +2465,31 @@ const CenterCanvas = React.memo(function CenterCanvas({
                   </ToggleGroupItem>
                 </DropdownMenuTrigger>
 
-                {fieldGroups && (
-                  <DropdownMenuContent
-                    className="w-56 py-1 px-1 max-h-none!"
-                    align="start"
-                    sideOffset={4}
-                  >
+                <DropdownMenuContent
+                  className="w-56 py-1 px-1 max-h-none!"
+                  align="start"
+                  sideOffset={4}
+                >
+                  {paginationVariableKeys.length > 0 && (
+                    <>
+                      <DropdownMenuLabel className="text-xs text-foreground/80">Pagination</DropdownMenuLabel>
+                      {paginationVariableKeys.map((key) => (
+                        <DropdownMenuItem
+                          key={key}
+                          className="gap-2"
+                          onClick={() => {
+                            addFieldVariable({ type: 'pagination', data: { key } });
+                            setTextEditorVariableDropdownOpen(false);
+                          }}
+                        >
+                          <Icon name="hash" className="size-3 text-muted-foreground shrink-0" />
+                          <span className="truncate">{PAGINATION_VARIABLE_LABELS[key]}</span>
+                        </DropdownMenuItem>
+                      ))}
+                      {textFieldGroups.length > 0 && <DropdownMenuSeparator />}
+                    </>
+                  )}
+                  {fieldGroups && textFieldGroups.length > 0 && (
                     <CollectionFieldSelector
                       fieldGroups={textFieldGroups}
                       allFields={collectionFieldsFromStore}
@@ -2477,8 +2505,8 @@ const CenterCanvas = React.memo(function CenterCanvas({
                         setTextEditorVariableDropdownOpen(false);
                       }}
                     />
-                  </DropdownMenuContent>
-                )}
+                  )}
+                </DropdownMenuContent>
               </DropdownMenu>
             </ToggleGroup>
           )}

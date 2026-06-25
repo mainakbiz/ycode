@@ -100,6 +100,7 @@ import { sanitizeHtmlId } from '@/lib/html-utils';
 import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, findAllParentCollectionLayers, isTextEditable, isTextContentLayer, isRichTextLayer, isHeadingLayer, findLayerWithParent, resetBindingsOnCollectionSourceChange, isInputInsideFilter, resolveFilterInputId, getLayerIndexes, indexedFindLayerById, indexedFindLayerWithParent, indexedFindParentCollectionLayer } from '@/lib/layer-utils';
 import { detachSpecificLayerFromComponent } from '@/lib/component-utils';
 import { convertContentToValue, parseValueToContent } from '@/lib/cms-variables-utils';
+import { defaultPaginationCountDoc, defaultPaginationInfoDoc } from '@/lib/pagination-text-utils';
 import { createTextComponentVariableValue } from '@/lib/variable-utils';
 import { getRichTextValue, extractPlainTextFromTiptap, getSoleCmsFieldBinding } from '@/lib/tiptap-utils';
 import { DEFAULT_TEXT_STYLES, getTextStyle, getTiptapTextContent } from '@/lib/text-format-utils';
@@ -1422,9 +1423,11 @@ const RightSidebar = React.memo(function RightSidebar({
         children: [
           {
             id: `${collectionLayerId}-pagination-prev-text`,
-            name: 'span',
+            name: 'text',
             customName: 'Previous Text',
+            settings: { tag: 'span' },
             classes: '',
+            restrictions: { editText: true },
             variables: {
               text: {
                 type: 'dynamic_text',
@@ -1436,13 +1439,15 @@ const RightSidebar = React.memo(function RightSidebar({
       } as Layer,
       {
         id: `${collectionLayerId}-pagination-info`,
-        name: 'span',
+        name: 'text',
         customName: 'Page Info',
+        settings: { tag: 'span' },
         classes: 'text-sm text-[#4b5563]',
+        restrictions: { editText: true },
         variables: {
           text: {
-            type: 'dynamic_text',
-            data: { content: 'Page 1 of 1' }
+            type: 'dynamic_rich_text',
+            data: { content: defaultPaginationInfoDoc() }
           }
         }
       } as Layer,
@@ -1459,9 +1464,11 @@ const RightSidebar = React.memo(function RightSidebar({
         children: [
           {
             id: `${collectionLayerId}-pagination-next-text`,
-            name: 'span',
+            name: 'text',
             customName: 'Next Text',
+            settings: { tag: 'span' },
             classes: '',
+            restrictions: { editText: true },
             variables: {
               text: {
                 type: 'dynamic_text',
@@ -1498,9 +1505,11 @@ const RightSidebar = React.memo(function RightSidebar({
         children: [
           {
             id: `${collectionLayerId}-pagination-loadmore-text`,
-            name: 'span',
+            name: 'text',
             customName: 'Load More Text',
+            settings: { tag: 'span' },
             classes: '',
+            restrictions: { editText: true },
             variables: {
               text: {
                 type: 'dynamic_text',
@@ -1512,13 +1521,15 @@ const RightSidebar = React.memo(function RightSidebar({
       } as Layer,
       {
         id: `${collectionLayerId}-pagination-count`,
-        name: 'span',
+        name: 'text',
         customName: 'Items Count',
+        settings: { tag: 'span' },
         classes: 'text-sm text-[#4b5563]',
+        restrictions: { editText: true },
         variables: {
           text: {
-            type: 'dynamic_text',
-            data: { content: 'Showing items' }
+            type: 'dynamic_rich_text',
+            data: { content: defaultPaginationCountDoc() }
           }
         }
       } as Layer,
@@ -2397,6 +2408,7 @@ const RightSidebar = React.memo(function RightSidebar({
                           fieldGroups={fieldGroups}
                           allFields={fields}
                           collections={collections}
+                          layer={selectedLayer}
                           allowedFieldTypes={SIMPLE_TEXT_FIELD_TYPES}
                         />
                       ) : (

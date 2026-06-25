@@ -14,7 +14,7 @@ import { tiptapDocToCanonicalString } from '@/lib/tiptap-utils';
 import { parseValueToContent } from '@/lib/cms-variables-utils';
 import { flattenFieldGroups, SIMPLE_TEXT_FIELD_TYPES } from '@/lib/collection-field-utils';
 import type { TranslatableItem } from '@/lib/localisation-utils';
-import type { Translation, CollectionField, Collection, CreateTranslationData, UpdateTranslationData, Page, PageFolder, Asset } from '@/types';
+import type { Translation, CollectionField, Collection, CreateTranslationData, UpdateTranslationData, Page, PageFolder, Asset, Layer } from '@/types';
 import { useAsset } from '@/hooks/use-asset';
 import { getAssetIcon, isAssetOfType, getAssetCategoryFromMimeType, ASSET_CATEGORIES } from '@/lib/asset-utils';
 import { buildAssetFolderPath } from '@/lib/asset-folder-utils';
@@ -37,6 +37,8 @@ interface TranslationRowProps {
   deleteTranslation: (translation: Translation) => Promise<void>;
   // Optional: For pages with CMS fields and inline variables support
   fieldGroups?: FieldGroup[];
+  /** Resolved layer for the item (provides context like pagination variables) */
+  layer?: Layer | null;
   allFields?: Record<string, CollectionField[]>;
   collections?: Collection[];
   // For slug validation
@@ -61,6 +63,7 @@ export default function TranslationRow({
   updateTranslationStatus,
   deleteTranslation,
   fieldGroups,
+  layer,
   allFields,
   collections,
   pages = [],
@@ -680,6 +683,7 @@ export default function TranslationRow({
                 }
                 className={`min-h-7 [&_.ProseMirror]:py-1 [&_.ProseMirror]:px-2.5 [&_.ProseMirror]:bg-transparent!`}
                 fieldGroups={fieldGroups}
+                layer={layer}
                 allFields={allFields}
                 collections={collections}
                 withFormatting={true}
@@ -700,6 +704,7 @@ export default function TranslationRow({
                   validationError ? '[&_.ProseMirror]:border-destructive!' : ''
                 }`}
                 fieldGroups={fieldGroups}
+                layer={layer}
                 allFields={allFields}
                 collections={collections}
                 allowedFieldTypes={SIMPLE_TEXT_FIELD_TYPES}

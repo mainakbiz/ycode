@@ -11,6 +11,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ITEMS_INJECTED_EVENT, type ItemsInjectedDetail } from '@/components/FilterableCollection';
+import { resolvePaginationString } from '@/lib/pagination-text-utils';
 import type { CollectionPaginationMeta, CollectionItem, Layer } from '@/types';
 
 interface LoadMoreCollectionProps {
@@ -177,7 +178,15 @@ export default function LoadMoreCollection({
 
     const countElement = wrapper?.querySelector(`[data-layer-id$="-pagination-count"]`);
     if (countElement) {
-      countElement.textContent = `Showing ${loadedCount} of ${totalItems}`;
+      // Prefer the (translated) template so the locale's wording is preserved;
+      // fall back to the English default for legacy pages without a template.
+      const template = countElement.getAttribute('data-pagination-template');
+      // loadedCount starts at itemsPerPage, which can exceed the actual total
+      // (e.g. 10 per page but only 6 items) — cap it so we never show "10 of 6".
+      const shown = Math.min(loadedCount, totalItems);
+      countElement.textContent = template
+        ? resolvePaginationString(template, { shown, total: totalItems, current: 1, pages: 1 })
+        : `Showing ${shown} of ${totalItems}`;
     }
 
     const loadMoreButton = wrapper?.querySelector(

@@ -32,6 +32,7 @@ import type { LinkResolutionContext } from '@/lib/link-utils';
 import { getLinkSettingsFromMark } from '@/lib/tiptap-extensions/rich-text-link';
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/slider-constants';
 import { resolveInlineVariables, resolveInlineVariablesFromData } from '@/lib/inline-variables';
+import { buildPaginationNumbers, getPaginationLayerKind, hasPaginationVariables, paginationTextVariableToTemplate, resolvePaginationTextVariable } from '@/lib/pagination-text-utils';
 import { formatFieldValue, resolveFieldFromSources } from '@/lib/cms-variables-utils';
 import { buildLayerTranslationKey, getTranslationByKey, hasValidTranslationValue, getTranslationValue, injectTranslatedText, applyCmsTranslations, translateComponentOverrides } from '@/lib/localisation-utils';
 import { formatDateFieldsInItemValues } from '@/lib/date-format-utils';
@@ -45,7 +46,7 @@ import { getMapboxAccessToken, getGoogleMapsEmbedApiKey } from '@/lib/map-server
 import { getAssetsByIds } from '@/lib/repositories/assetRepository';
 import { isVirtualAssetField, findDisplayField, hasDynamicDateRule, isDynamicDateCondition, buildGlobalsMetaMap, buildGlobalsValueMap, mergeGlobalsIntoFieldData, type GlobalFieldMeta } from '@/lib/collection-field-utils';
 import { getDefaultFormatId, isFormatValidForFieldType } from '@/lib/variable-format-utils';
-import type { DynamicVisibilityCondition, FieldVariable, AssetVariable, DynamicTextVariable, LinkSettings } from '@/types';
+import type { DynamicVisibilityCondition, FieldVariable, AssetVariable, DynamicTextVariable, DynamicRichTextVariable, LinkSettings } from '@/types';
 import type { DesignColorVariable } from '@/types';
 
 // Cached map provider tokens for synchronous use inside layerToHtml.
@@ -3330,27 +3331,34 @@ function updatePaginationLayerWithMeta(layer: Layer, meta: CollectionPaginationM
       : `${updatedLayer.classes || ''} hidden`.trim();
   }
 
+  const numbers = buildPaginationNumbers(meta);
+
   // Helper to recursively update layers
   function updateLayerRecursive(l: Layer): void {
     if (l.id?.endsWith('-pagination-info')) {
-      l.variables = {
-        ...l.variables,
-        text: {
-          type: 'dynamic_text',
-          data: { content: `Page ${currentPage} of ${totalPages}` }
-        }
-      };
+      // Modern templates embed `pagination` inline variables — stash the numbers
+      // so renderers (and the translated template) resolve them at display time.
+      // Legacy content without chips keeps the hardcoded replacement.
+      if (hasPaginationVariables(l.variables?.text)) {
+        l._paginationNumbers = numbers;
+      } else {
+        l.variables = {
+          ...l.variables,
+          text: { type: 'dynamic_text', data: { content: `Page ${currentPage} of ${totalPages}` } }
+        };
+      }
     }
 
     if (l.id?.endsWith('-pagination-count')) {
-      const shownItems = Math.min(itemsPerPage, totalItems);
-      l.variables = {
-        ...l.variables,
-        text: {
-          type: 'dynamic_text',
-          data: { content: `Showing ${shownItems} of ${totalItems}` }
-        }
-      };
+      if (hasPaginationVariables(l.variables?.text)) {
+        l._paginationNumbers = numbers;
+      } else {
+        const shownItems = Math.min(itemsPerPage, totalItems);
+        l.variables = {
+          ...l.variables,
+          text: { type: 'dynamic_text', data: { content: `Showing ${shownItems} of ${totalItems}` } }
+        };
+      }
     }
 
     // Update previous button state
@@ -3436,8 +3444,10 @@ export function generatePaginationWrapper(
         children: [
           {
             id: `${collectionLayerId}-pagination-prev-text`,
-            name: 'span',
+            name: 'text',
+            settings: { tag: 'span' },
             classes: '',
+            restrictions: { editText: true },
             variables: {
               text: {
                 type: 'dynamic_text',
@@ -3450,8 +3460,10 @@ export function generatePaginationWrapper(
       // Page indicator
       {
         id: `${collectionLayerId}-pagination-info`,
-        name: 'span',
+        name: 'text',
+        settings: { tag: 'span' },
         classes: 'text-sm text-[#4b5563]',
+        restrictions: { editText: true },
         variables: {
           text: {
             type: 'dynamic_text',
@@ -3476,8 +3488,10 @@ export function generatePaginationWrapper(
         children: [
           {
             id: `${collectionLayerId}-pagination-next-text`,
-            name: 'span',
+            name: 'text',
+            settings: { tag: 'span' },
             classes: '',
+            restrictions: { editText: true },
             variables: {
               text: {
                 type: 'dynamic_text',
@@ -4949,6 +4963,13 @@ export function layerToHtml(
     attrs.push('selected');
   }
 
+  // Pagination count/info layers: expose the (translated) template so the
+  // client runtime can re-resolve the numbers after load-more/filter/page nav.
+  if (getPaginationLayerKind(layer.id) && layer._paginationNumbers) {
+    const template = paginationTextVariableToTemplate(layer.variables?.text);
+    if (template) attrs.push(`data-pagination-template="${escapeHtml(template)}"`);
+  }
+
   // For buttons/divs rendered as <a>, resolve link href and add attributes directly
   if ((isButtonWithLink || isDivWithLink) && buttonLinkSettings) {
     let btnLinkHref = '';
@@ -5039,8 +5060,15 @@ export function layerToHtml(
       .join('')
     : '';
 
-  // Get text content from variables.text
-  const textVariable = layer.variables?.text;
+  // Get text content from variables.text. For pagination count/info layers,
+  // resolve the `pagination` inline variables to live numbers first.
+  let textVariable = layer.variables?.text;
+  if (textVariable && layer._paginationNumbers && getPaginationLayerKind(layer.id)) {
+    textVariable = resolvePaginationTextVariable(
+      textVariable as DynamicTextVariable | DynamicRichTextVariable,
+      layer._paginationNumbers,
+    );
+  }
   let textContent = '';
   let isRichText = false;
 

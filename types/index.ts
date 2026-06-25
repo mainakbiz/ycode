@@ -486,6 +486,9 @@ export interface Layer {
   _originalLayerId?: string;
   // SSR-only property for pagination metadata (when pagination is enabled)
   _paginationMeta?: CollectionPaginationMeta;
+  // SSR-only property: live pagination numbers stashed on the count/info text
+  // layers so renderers can resolve `pagination` inline variables at display time
+  _paginationNumbers?: PaginationNumbers;
   // SSR-only property for dynamic inline styles from CMS color field bindings
   _dynamicStyles?: Record<string, string>;
   // SSR-only property: when a conditionalVisibility rule references a date
@@ -1273,7 +1276,7 @@ export interface ColorVariable {
 
 export interface VariableType {
   id?: string; // Reference to ComponentVariable.id (for component variable linking)
-  type: 'field' | 'asset' | 'video'  | 'dynamic_rich_text' | 'dynamic_text'| 'static_text';
+  type: 'field' | 'asset' | 'video'  | 'dynamic_rich_text' | 'dynamic_text'| 'static_text' | 'pagination';
   data: object;
 }
 
@@ -1344,7 +1347,26 @@ export interface StaticTextVariable extends VariableType {
   };
 }
 
-export type InlineVariable = FieldVariable;
+// Pagination Variable, an inline variable that resolves to a live pagination
+// number (items shown/total, current/total pages) at render time. Lets the
+// pagination count/info texts ("Showing 6 of 20", "Page 1 of 3") be edited and
+// translated while keeping the numbers dynamic.
+export interface PaginationVariable extends VariableType {
+  type: 'pagination';
+  data: {
+    key: 'shown' | 'total' | 'current' | 'pages';
+  };
+}
+
+export type InlineVariable = FieldVariable | PaginationVariable;
+
+/** Live pagination numbers used to resolve `pagination` inline variables. */
+export interface PaginationNumbers {
+  shown: number;
+  total: number;
+  current: number;
+  pages: number;
+}
 
 // Image settings value for component variables
 export interface ImageSettingsValue {
