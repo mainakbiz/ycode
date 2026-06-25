@@ -456,50 +456,39 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
               className="min-h-[84px] resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 focus-visible:border-transparent focus-visible:ring-0"
             />
             <div className="flex items-center justify-between gap-1 px-2 pb-2">
-              <div className="flex items-center gap-0.5">
+              <ModelPicker model={model} onChange={setModel} />
+              <div className="flex items-center gap-1">
                 <Button
-                  size="sm"
+                  size="xs"
                   variant="ghost"
-                  className="size-7 p-0 text-muted-foreground"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={images.length >= MAX_IMAGES}
                   aria-label="Attach image"
                   title={images.length >= MAX_IMAGES ? `Up to ${MAX_IMAGES} images` : 'Attach image'}
                 >
-                  <Icon name="image" className="size-3.5" />
+                  <Icon name="image" />
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={cn('size-7 p-0', autoReview ? 'text-foreground' : 'text-muted-foreground')}
-                  onClick={() => setAutoReview(!autoReview)}
-                  aria-pressed={autoReview}
-                  aria-label="Auto visual review"
-                  title={autoReview ? 'Auto visual review: on' : 'Auto visual review: off'}
-                >
-                  <Icon name="eye" className="size-3.5" />
-                </Button>
-                <ModelPicker model={model} onChange={setModel} />
+                {isStreaming ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={stop}
+                    aria-label="Stop"
+                  >
+                    <Icon name="stop" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => submit(input)}
+                    disabled={!input.trim() && images.length === 0}
+                    aria-label="Send"
+                  >
+                    <Icon name="arrowLeft" className="rotate-90" />
+                  </Button>
+                )}
               </div>
-              {isStreaming ? (
-                <Button
-                  size="sm" variant="secondary"
-                  className="size-7 p-0" onClick={stop}
-                  aria-label="Stop"
-                >
-                  <Icon name="stop" className="size-3" />
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  className="size-7 p-0"
-                  onClick={() => submit(input)}
-                  disabled={!input.trim() && images.length === 0}
-                  aria-label="Send"
-                >
-                  <Icon name="arrowLeft" className="size-3.5 rotate-90" />
-                </Button>
-              )}
             </div>
           </div>
         </div>
@@ -530,9 +519,8 @@ function ModelPicker({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          size="sm"
+          size="xs"
           variant="ghost"
-          className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
         >
           {current?.label ?? 'Select model'}
           <Icon name="chevronDown" className="size-3" />
