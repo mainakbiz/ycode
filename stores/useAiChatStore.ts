@@ -520,6 +520,7 @@ export const useAiChatStore = create<AiChatStore>()(
           // mid-run navigation can't drift edits/review to the wrong page.
           const pinnedPageId = useEditorStore.getState().currentPageId ?? null;
           turnEditedPageIds.clear();
+          turnTouchedLayerIds.clear();
 
           set({ status: 'streaming', error: null });
           try {
@@ -597,13 +598,17 @@ function appendTextPart(parts: ChatMessagePart[] | undefined, text: string): Cha
 }
 
 /**
- * Tool-input keys whose string values reference a layer in the page tree.
- * Used to light up the canvas shimmer overlay on the layers a tool touches.
+ * Tool-input keys whose value references a layer in the page tree (scalar string
+ * or an array of strings, e.g. animation `targets`). Used to light up the canvas
+ * shimmer overlay on the layers a tool touches.
  */
-const LAYER_ID_INPUT_KEYS = new Set(['layer_id', 'parent_layer_id', 'new_parent_id', 'anchor_layer_id']);
+const LAYER_ID_INPUT_KEYS = new Set([
+  'layer_id', 'parent_layer_id', 'new_parent_id', 'anchor_layer_id', 'targets', 'layer_ids',
+]);
 
 /** Recursively collect every layer ID referenced by a tool call's input
- * (handles nested `operations` arrays from `batch_operations`). */
+ * (handles nested `operations` arrays from `batch_operations`, and both scalar
+ * and array-valued layer-id keys). */
 function collectLayerIds(input: unknown): string[] {
   const ids = new Set<string>();
   const walk = (value: unknown): void => {
@@ -611,8 +616,14 @@ function collectLayerIds(input: unknown): string[] {
       value.forEach(walk);
     } else if (value && typeof value === 'object') {
       for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        if (typeof child === 'string' && LAYER_ID_INPUT_KEYS.has(key)) {
-          ids.add(child);
+        if (LAYER_ID_INPUT_KEYS.has(key)) {
+          if (typeof child === 'string') {
+            ids.add(child);
+          } else if (Array.isArray(child)) {
+            for (const entry of child) {
+              if (typeof entry === 'string') ids.add(entry);
+            }
+          }
         } else {
           walk(child);
         }
@@ -644,22 +655,23 @@ function collectPageIds(input: unknown): string[] {
   return [...ids];
 }
 
-/** Layer IDs per in-flight tool call (cleared as each result arrives). */
-const inFlightToolLayerIds = new Map<string, string[]>();
+/**
+ * Every layer the agent has touched during the current turn. Accumulated across
+ * all tool calls and kept lit until the turn ends, so the user clearly sees the
+ * full scope of what the AI is working on rather than a single layer flashing
+ * for one in-flight tool call.
+ */
+const turnTouchedLayerIds = new Set<string>();
 
-/** Push the union of all in-flight layer IDs to the editor store so the canvas
- * overlay can shimmer the layers the agent is currently working on. */
+/** Push every layer touched this turn to the editor store so the canvas overlay
+ * can shimmer the full set of layers the agent is working on. */
 function syncAiActiveLayerIds(): void {
-  const union = new Set<string>();
-  for (const ids of inFlightToolLayerIds.values()) {
-    for (const id of ids) union.add(id);
-  }
-  useEditorStore.getState().setAiActiveLayerIds([...union]);
+  useEditorStore.getState().setAiActiveLayerIds([...turnTouchedLayerIds]);
 }
 
 /** Clear all AI activity highlights (turn ended or aborted). */
 function clearAiActiveLayerIds(): void {
-  inFlightToolLayerIds.clear();
+  turnTouchedLayerIds.clear();
   useEditorStore.getState().setAiActiveLayerIds([]);
 }
 
@@ -679,7 +691,7 @@ function applyEvent(
     case 'tool_call': {
       const layerIds = collectLayerIds(event.input);
       if (layerIds.length > 0) {
-        inFlightToolLayerIds.set(event.id, layerIds);
+        for (const id of layerIds) turnTouchedLayerIds.add(id);
         syncAiActiveLayerIds();
       }
       // Remember which page(s) the agent edited so the visual self-review targets
@@ -698,9 +710,8 @@ function applyEvent(
       break;
     }
     case 'tool_result':
-      if (inFlightToolLayerIds.delete(event.id)) {
-        syncAiActiveLayerIds();
-      }
+      // Leave touched layers lit — they stay highlighted for the whole turn so
+      // the user sees the full scope of the agent's work, not a brief flash.
       patchAssistant((m) => ({
         ...m,
         toolCalls: m.toolCalls.map((call) => (call.id === event.id ? { ...call, ok: event.ok } : call)),

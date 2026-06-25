@@ -75,13 +75,13 @@
    leaves only the padding ring, which we paint with a base violet tint plus a
    moving highlight band (animated via background-position) for the shimmer. */
 .ai-activity-outline {
-  border-radius: 3px;
-  padding: 1.5px;
+  border-radius: 0;
+  padding: 1px;
   background:
     linear-gradient(110deg, transparent 30%, rgba(196, 181, 253, 0.95) 50%, transparent 70%),
     rgba(139, 92, 246, 0.4);
   background-size: 220% 100%, 100% 100%;
-  animation: shimmer 1.5s linear infinite;
+  animation: shimmer 3s ease-in-out infinite;
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
