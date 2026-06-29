@@ -89,6 +89,10 @@ interface EditorActions {
   canRedo: () => boolean;
   setInteractionHighlights: (triggerIds: string[], targetIds: string[]) => void;
   setAiActiveLayerIds: (ids: string[]) => void;
+  /** Flag newly-arrived remote layers so the canvas can animate their entrance. */
+  markLayersEntering: (ids: string[]) => void;
+  /** Set the page the AI is actively building (drives the canvas build skeleton). */
+  setAiBuildingPageId: (pageId: string | null) => void;
   setActiveInteraction: (triggerId: string | null, targetIds: string[]) => void;
   clearActiveInteraction: () => void;
   openCollectionItemSheet: (collectionId: string, itemId: string) => void;
@@ -143,6 +147,15 @@ interface EditorStoreWithHistory extends EditorState {
   interactionTargetLayerIds: string[];
   /** Layer IDs the AI agent is currently editing (drives the canvas shimmer overlay) */
   aiActiveLayerIds: string[];
+  /** Outermost layer IDs that just arrived from a remote source (AI/MCP/collaborator),
+   * consumed by the canvas to play a staggered entrance animation. */
+  canvasEnterLayerIds: string[];
+  /** Bumped on every markLayersEntering call so the canvas reacts even when the
+   * same ids repeat across consecutive remote updates. */
+  canvasEnterNonce: number;
+  /** Page the AI is currently building. When this matches the open page and the
+   * canvas is still empty, a skeleton placeholder is shown for instant feedback. */
+  aiBuildingPageId: string | null;
   activeInteractionTriggerLayerId: string | null;
   activeInteractionTargetLayerIds: string[];
   activeTextStyleKey: string | null; // Currently active text style (e.g., 'bold', 'italic')
@@ -247,6 +260,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   interactionTriggerLayerIds: [],
   interactionTargetLayerIds: [],
   aiActiveLayerIds: [],
+  canvasEnterLayerIds: [],
+  canvasEnterNonce: 0,
+  aiBuildingPageId: null,
   activeInteractionTriggerLayerId: null,
   activeInteractionTargetLayerIds: [],
   activeTextStyleKey: null,
@@ -558,6 +574,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
     return { aiActiveLayerIds: ids };
   }),
+
+  markLayersEntering: (ids) => set((state) => {
+    if (ids.length === 0) return state;
+    return {
+      canvasEnterLayerIds: ids,
+      canvasEnterNonce: state.canvasEnterNonce + 1,
+    };
+  }),
+
+  setAiBuildingPageId: (pageId) => set((state) => (
+    state.aiBuildingPageId === pageId ? state : { aiBuildingPageId: pageId }
+  )),
 
   setActiveInteraction: (triggerId, targetIds) => set({
     activeInteractionTriggerLayerId: triggerId,

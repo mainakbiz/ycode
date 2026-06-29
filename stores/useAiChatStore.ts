@@ -4,6 +4,8 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { DEFAULT_AGENT_MODEL } from '@/lib/agent/models';
+import { syncLayerAssets } from '@/lib/canvas-asset-sync';
+import { findAddedLayerIds } from '@/lib/layer-utils';
 import { useComponentsStore } from '@/stores/useComponentsStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
@@ -714,7 +716,9 @@ function syncAiActiveLayerIds(): void {
 /** Clear all AI activity highlights (turn ended or aborted). */
 function clearAiActiveLayerIds(): void {
   turnTouchedLayerIds.clear();
-  useEditorStore.getState().setAiActiveLayerIds([]);
+  const editor = useEditorStore.getState();
+  editor.setAiActiveLayerIds([]);
+  editor.setAiBuildingPageId(null);
 }
 
 function applyEvent(
@@ -740,8 +744,20 @@ function applyEvent(
       // the right page instead of whatever is currently open on the canvas. The
       // authoritative Changes-card counts come later from page_changed events.
       if (isVisualMutation(event.name)) {
-        for (const pageId of collectPageIds(event.input)) {
+        const editedPageIds = collectPageIds(event.input);
+        for (const pageId of editedPageIds) {
           turnEditedPageIds.add(pageId);
+        }
+        // First visual edit of the turn: flag the page being built so the canvas
+        // shows an instant skeleton placeholder (until real layers stream in).
+        // Prefer the open page when the agent is editing it.
+        const editor = useEditorStore.getState();
+        if (!editor.aiBuildingPageId) {
+          const openPageId = editor.currentPageId;
+          const buildingPageId = openPageId && editedPageIds.includes(openPageId)
+            ? openPageId
+            : editedPageIds[0] ?? openPageId ?? null;
+          if (buildingPageId) editor.setAiBuildingPageId(buildingPageId);
         }
       }
       patchAssistant((m) => {
@@ -773,7 +789,20 @@ function applyEvent(
       // canvas and the review screenshot reflect the edit without waiting on the
       // realtime broadcast. Record the per-page affected layer count for the card.
       const pagesStore = usePagesStore.getState();
+
+      // Diff against the current draft (before replacing it) so the canvas can
+      // step-reveal the layers this turn added. De-duped downstream against ids
+      // the realtime broadcast already animated, so the snapshot won't replay.
+      const previousLayers = pagesStore.draftsByPageId[event.pageId]?.layers ?? [];
+      const addedIds = findAddedLayerIds(previousLayers, event.layers);
+
       pagesStore.setDraftLayers(event.pageId, event.layers);
+      if (addedIds.length > 0) {
+        useEditorStore.getState().markLayersEntering(addedIds);
+      }
+      // Load any assets these layers reference that aren't cached yet (e.g.
+      // images the AI just uploaded) so they show without a manual refresh.
+      void syncLayerAssets(event.layers);
       turnEditedPageIds.add(event.pageId);
       if (event.layerCount > 0) {
         const pageName = pagesStore.pages.find((p) => p.id === event.pageId)?.name ?? 'Page';

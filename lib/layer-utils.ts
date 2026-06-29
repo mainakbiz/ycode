@@ -463,6 +463,38 @@ export function containsLayerId(layer: Layer, targetId: string): boolean {
   return layer.children?.some(child => containsLayerId(child, targetId)) ?? false;
 }
 
+/** Collect every layer id in a tree into a Set (used to diff trees). */
+export function collectLayerIdSet(layers: Layer[], set: Set<string> = new Set()): Set<string> {
+  for (const layer of layers) {
+    set.add(layer.id);
+    if (layer.children) collectLayerIdSet(layer.children, set);
+  }
+  return set;
+}
+
+/**
+ * Find every newly-added layer between two versions of a tree, in document
+ * (pre-order) order — parents before children, top to bottom.
+ *
+ * Returns all ids present in `newLayers` but not `oldLayers`. The document order
+ * lets the canvas reveal a freshly-built section step by step (container first,
+ * then its contents) so it reads as if the page is being assembled live.
+ */
+export function findAddedLayerIds(oldLayers: Layer[], newLayers: Layer[]): string[] {
+  const oldIds = collectLayerIdSet(oldLayers);
+  const added: string[] = [];
+
+  const walk = (siblings: Layer[]) => {
+    for (const layer of siblings) {
+      if (!oldIds.has(layer.id)) added.push(layer.id);
+      if (layer.children) walk(layer.children);
+    }
+  };
+
+  walk(newLayers);
+  return added;
+}
+
 /**
  * Collect all element IDs from a layer tree (both settings.id and attributes.id)
  * Used for generating unique IDs for new elements
