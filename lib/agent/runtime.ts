@@ -43,8 +43,10 @@ export type RuntimeEvent =
   | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }
   // Authoritative post-turn snapshot of a page the agent edited, computed from
   // the server cache so the client never has to race the realtime broadcast to
-  // build the Changes card or screenshot the right state.
-  | { type: 'page_changed'; pageId: string; layerCount: number; layers: Layer[] }
+  // build the Changes card or screenshot the right state. `layersBefore` is the
+  // pre-turn tree (only sent when something changed) so the client can offer a
+  // one-click Undo of the whole turn.
+  | { type: 'page_changed'; pageId: string; layerCount: number; layers: Layer[]; layersBefore?: Layer[] }
   | { type: 'done'; stopReason: string | null }
   | { type: 'error'; message: string };
 
@@ -68,10 +70,11 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
   let totalToolCalls = 0;
   let noOpCorrectionUsed = false;
 
-  // Per-page "before" signatures (captured the first time a tool touches a page,
+  // Per-page pre-edit layer trees (captured the first time a tool touches a page,
   // before it runs) and the set of pages the agent edited. Used to emit an
-  // authoritative page_changed event per page at the end of the run.
-  const beforeByPage = new Map<string, Map<string, string>>();
+  // authoritative page_changed event per page at the end of the run, including
+  // the before-tree so the client can offer a one-click Undo.
+  const beforeLayersByPage = new Map<string, Layer[]>();
   const editedPageIds = new Set<string>();
 
   /** Stream one authoritative page_changed event per edited page, diffing the
@@ -80,9 +83,15 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
     for (const pageId of editedPageIds) {
       try {
         const after = await getCachedLayers(pageId);
-        const before = beforeByPage.get(pageId) ?? new Map<string, string>();
-        const layerCount = countChangedLayers(before, layerSignatures(after));
-        yield { type: 'page_changed', pageId, layerCount, layers: after };
+        const before = beforeLayersByPage.get(pageId) ?? [];
+        const layerCount = countChangedLayers(layerSignatures(before), layerSignatures(after));
+        yield {
+          type: 'page_changed',
+          pageId,
+          layerCount,
+          layers: after,
+          layersBefore: layerCount > 0 ? before : undefined,
+        };
       } catch (error) {
         console.error('[ai-agent] failed to compute page change snapshot:', error);
       }
@@ -143,9 +152,9 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
       // mutates it, so we can diff it after the run for the Changes card.
       for (const pageId of collectPageIdsFromInput(call.input)) {
         editedPageIds.add(pageId);
-        if (!beforeByPage.has(pageId)) {
+        if (!beforeLayersByPage.has(pageId)) {
           try {
-            beforeByPage.set(pageId, layerSignatures(await getCachedLayers(pageId)));
+            beforeLayersByPage.set(pageId, await getCachedLayers(pageId));
           } catch (error) {
             console.error('[ai-agent] failed to snapshot page before edit:', error);
           }

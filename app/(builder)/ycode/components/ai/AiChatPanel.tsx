@@ -174,6 +174,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
   const setAutoReview = useAiChatStore((s) => s.setAutoReview);
   const setModel = useAiChatStore((s) => s.setModel);
   const revertTurn = useAiChatStore((s) => s.revertTurn);
+  const redoTurn = useAiChatStore((s) => s.redoTurn);
   const stop = useAiChatStore((s) => s.stop);
   const close = useAiChatStore((s) => s.close);
   const sessionUsage = useAiChatStore((s) => s.sessionUsage);
@@ -312,6 +313,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
               key={message.id} message={message}
               isStreaming={isStreaming}
               onRevert={revertTurn}
+              onRedo={redoTurn}
             />
           ))
         )}
@@ -489,10 +491,12 @@ function MessageBubble({
   message,
   isStreaming,
   onRevert,
+  onRedo,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   onRevert: (messageId: string) => void;
+  onRedo: (messageId: string) => void;
 }) {
   if (message.role === 'user' && message.review) {
     return (
@@ -532,19 +536,6 @@ function MessageBubble({
             <MessageTextWithMentions text={message.text} mentions={message.mentions} />
           </div>
         )}
-        {message.reverted ? (
-          <span className="text-[10px] text-muted-foreground">Changes reverted</span>
-        ) : message.canRevert ? (
-          <button
-            type="button"
-            onClick={() => onRevert(message.id)}
-            disabled={isStreaming}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            <Icon name="undo" className="size-2.5" />
-            Revert changes
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -582,7 +573,14 @@ function MessageBubble({
       )}
 
       {!isActivelyStreaming && message.changes && message.changes.length > 0 && (
-        <ChangesCard changes={message.changes} />
+        <ChangesCard
+          changes={message.changes}
+          canRevert={message.canRevert}
+          reverted={message.reverted}
+          disabled={isStreaming}
+          onUndo={() => onRevert(message.id)}
+          onRedo={() => onRedo(message.id)}
+        />
       )}
 
       {!isActivelyStreaming && shortSummary && <MarkdownText text={shortSummary} />}
@@ -731,12 +729,41 @@ function ThoughtDisclosure({
 }
 
 /** Post-turn summary of which pages changed and how many of their layers were
- * affected, matching the canvas "Changes" card. */
-function ChangesCard({ changes }: { changes: TurnChange[] }) {
+ * affected, matching the canvas "Changes" card. Offers a one-click Undo that
+ * restores every listed page to its pre-turn state. */
+function ChangesCard({
+  changes,
+  canRevert,
+  reverted,
+  disabled,
+  onUndo,
+  onRedo,
+}: {
+  changes: TurnChange[];
+  canRevert?: boolean;
+  reverted?: boolean;
+  disabled?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}) {
   const pages = usePagesStore((s) => s.pages);
   return (
     <div className="overflow-hidden rounded-lg border border-border">
-      <div className="px-3 py-1.5 text-[11px] font-medium text-muted-foreground">Changes</div>
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground">Changes</span>
+        {canRevert ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mr-1.5 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+            onClick={reverted ? onRedo : onUndo}
+            disabled={disabled}
+          >
+            <Icon name={reverted ? 'redo' : 'undo'} className="size-3" />
+            {reverted ? 'Redo' : 'Undo'}
+          </Button>
+        ) : null}
+      </div>
       <div className="flex flex-col">
         {changes.map((change) => {
           const page = pages.find((p) => p.id === change.pageId);

@@ -60,9 +60,9 @@ export interface ChatMessage {
   changes?: TurnChange[];
   /** True for the auto-generated visual self-review turn (rendered compactly). */
   review?: boolean;
-  /** True while a pre-turn page snapshot exists and can be restored (not persisted). */
+  /** True while a turn checkpoint exists and can be restored (not persisted). */
   canRevert?: boolean;
-  /** True once this turn's changes have been reverted. */
+  /** True once this turn's changes have been reverted (Redo re-applies them). */
   reverted?: boolean;
 }
 
@@ -158,6 +158,7 @@ interface AiChatActions {
   setModel: (model: string | null) => void;
   sendMessage: (text: string, attachment?: MessageAttachment) => Promise<void>;
   revertTurn: (messageId: string) => Promise<void>;
+  redoTurn: (messageId: string) => Promise<void>;
 }
 
 type AiChatStore = AiChatState & AiChatActions;
@@ -168,18 +169,52 @@ type RuntimeEvent =
   | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; ok: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }
-  | { type: 'page_changed'; pageId: string; layerCount: number; layers: Layer[] }
+  | { type: 'page_changed'; pageId: string; layerCount: number; layers: Layer[]; layersBefore?: Layer[] }
   | { type: 'done'; stopReason: string | null }
   | { type: 'error'; message: string };
 
 let abortController: AbortController | null = null;
 
 /**
- * Pre-turn page snapshots, keyed by the user message id, enabling a one-click
- * revert of a turn's layout changes. Kept in memory only (never persisted) to
- * avoid bloating storage and because stale snapshots aren't useful after reload.
+ * Pre/post-turn page snapshots, keyed by the assistant message id (the one that
+ * renders the Changes card), enabling one-click Undo (restore `before`) and Redo
+ * (restore `after`) of every page a turn changed. Kept in memory only (never
+ * persisted) to avoid bloating storage and because stale snapshots aren't useful
+ * after reload.
  */
-const turnCheckpoints = new Map<string, { pageId: string; layers: Layer[] }>();
+const turnCheckpoints = new Map<
+  string,
+  { pages: Array<{ pageId: string; before: Layer[]; after: Layer[] }> }
+>();
+
+/**
+ * Per-turn pre-edit layer trees, keyed by page id. Seeded with the active page
+ * at turn start (fallback) and overridden by the authoritative `layersBefore`
+ * the server streams in page_changed. Drained into a `turnCheckpoints` entry
+ * after the turn so Undo can restore each changed page. Reset every runTurn.
+ */
+const turnCheckpointPages = new Map<string, Layer[]>();
+
+/**
+ * Per-turn post-edit layer trees, keyed by page id. Captured from the
+ * authoritative `layers` the server streams in page_changed, so Redo can
+ * re-apply the turn's result after an Undo. Reset every runTurn.
+ */
+const turnCheckpointPagesAfter = new Map<string, Layer[]>();
+
+/** Apply a set of saved page layer trees to the drafts, loading any page that
+ * isn't open client-side first (setDraftLayers/saveDraft no-op without a loaded
+ * draft). Shared by Undo (restore `before`) and Redo (restore `after`). */
+async function restoreCheckpointPages(pages: Array<{ pageId: string; layers: Layer[] }>): Promise<void> {
+  const store = usePagesStore.getState();
+  for (const { pageId, layers } of pages) {
+    if (!store.draftsByPageId[pageId]) {
+      await store.loadDraft(pageId);
+    }
+    store.setDraftLayers(pageId, layers);
+    await store.saveDraft(pageId);
+  }
+}
 
 /**
  * Page ids the agent visually edited during the in-progress turn. Used to point
@@ -356,8 +391,11 @@ export const useAiChatStore = create<AiChatStore>()(
         const images = attachment?.images ?? [];
         if (!trimmed && images.length === 0) return;
 
-        // Fresh per-turn baseline for the Changes card and "Thought for Ns".
+        // Fresh per-turn baseline for the Changes card, Undo checkpoint, and
+        // "Thought for Ns".
         turnChanges.clear();
+        turnCheckpointPages.clear();
+        turnCheckpointPagesAfter.clear();
         const startedAt = Date.now();
 
         const isReview = reviewDepth > 0;
@@ -374,16 +412,14 @@ export const useAiChatStore = create<AiChatStore>()(
         };
         const assistantMessage: ChatMessage = { id: newId(), role: 'assistant', text: '', toolCalls: [], parts: [] };
 
-        // Snapshot the active page before a real (non-review) turn so the user can
-        // revert this turn's layout changes in one click.
+        // Fallback Undo baseline: snapshot the active page before the turn in case
+        // the server can't supply authoritative before-layers (page_changed
+        // overrides this per page). The checkpoint is finalized after the turn,
+        // keyed by the assistant message that renders the Changes card.
         if (!isReview && pageId) {
           const snapshot = usePagesStore.getState().draftsByPageId[pageId]?.layers;
           if (snapshot) {
-            turnCheckpoints.set(userMessage.id, {
-              pageId,
-              layers: structuredClone(snapshot),
-            });
-            userMessage.canRevert = true;
+            turnCheckpointPages.set(pageId, structuredClone(snapshot));
           }
         }
 
@@ -453,10 +489,30 @@ export const useAiChatStore = create<AiChatStore>()(
         // The server already diffed its authoritative cache and streamed one
         // page_changed event per edited page, so we just read the accumulator.
         const changes = [...turnChanges.values()];
+
+        // Stash the pre/post-turn layers of every changed page (server-
+        // authoritative, falling back to the turn-start snapshot for `before`) so
+        // the card can offer Undo (restore before) and Redo (restore after).
+        const checkpointPages = changes
+          .map((change) => ({
+            pageId: change.pageId,
+            before: turnCheckpointPages.get(change.pageId),
+            after: turnCheckpointPagesAfter.get(change.pageId),
+          }))
+          .filter(
+            (entry): entry is { pageId: string; before: Layer[]; after: Layer[] } =>
+              !!entry.before && !!entry.after,
+          );
+        const canRevert = checkpointPages.length > 0;
+        if (canRevert) {
+          turnCheckpoints.set(assistantMessage.id, { pages: checkpointPages });
+        }
+
         patchAssistant((m) => ({
           ...m,
           thinkingMs: Date.now() - startedAt,
           changes: changes.length > 0 ? changes : undefined,
+          canRevert: canRevert || undefined,
         }));
 
         // Visual self-review: if this turn actually changed layers, screenshot the
@@ -537,14 +593,25 @@ export const useAiChatStore = create<AiChatStore>()(
           const checkpoint = turnCheckpoints.get(messageId);
           if (!checkpoint || get().status !== 'idle') return;
 
-          const pages = usePagesStore.getState();
-          pages.setDraftLayers(checkpoint.pageId, checkpoint.layers);
-          await pages.saveDraft(checkpoint.pageId);
-
-          turnCheckpoints.delete(messageId);
+          // Restore every changed page to its pre-turn state, then flag the turn
+          // as reverted (the checkpoint is kept so Redo can re-apply the result).
+          await restoreCheckpointPages(checkpoint.pages.map((p) => ({ pageId: p.pageId, layers: p.before })));
           set((state) => ({
             messages: state.messages.map((message) =>
-              message.id === messageId ? { ...message, canRevert: false, reverted: true } : message,
+              message.id === messageId ? { ...message, reverted: true } : message,
+            ),
+          }));
+        },
+
+        redoTurn: async (messageId: string) => {
+          const checkpoint = turnCheckpoints.get(messageId);
+          if (!checkpoint || get().status !== 'idle') return;
+
+          // Re-apply the turn's result (post-edit state) to every changed page.
+          await restoreCheckpointPages(checkpoint.pages.map((p) => ({ pageId: p.pageId, layers: p.after })));
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === messageId ? { ...message, reverted: false } : message,
             ),
           }));
         },
@@ -808,6 +875,12 @@ function applyEvent(
         const pageName = pagesStore.pages.find((p) => p.id === event.pageId)?.name ?? 'Page';
         turnChanges.set(event.pageId, { pageId: event.pageId, pageName, layerCount: event.layerCount });
       }
+      // Authoritative pre-turn tree for Undo (overrides the turn-start fallback)
+      // and post-turn tree for Redo.
+      if (event.layersBefore) {
+        turnCheckpointPages.set(event.pageId, event.layersBefore);
+      }
+      turnCheckpointPagesAfter.set(event.pageId, event.layers);
       break;
     }
     case 'usage':
