@@ -126,6 +126,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const canUndo = useEditorStore((state) => state.canUndo);
   const canRedo = useEditorStore((state) => state.canRedo);
   const editingComponentId = useEditorStore((state) => state.editingComponentId);
+  const aiBuildingPageId = useEditorStore((state) => state.aiBuildingPageId);
   const builderDataPreloaded = useEditorStore((state) => state.builderDataPreloaded);
   const setBuilderDataPreloaded = useEditorStore((state) => state.setBuilderDataPreloaded);
   const collectionItemSheet = useEditorStore((state) => state.collectionItemSheet);
@@ -968,6 +969,19 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
       // If urlState.layerId exists, let the URL initialization effect handle it
     }
   }, [currentPageId, currentDraft, setSelectedLayerId, urlState.layerId]);
+
+  // When the AI starts editing a page other than the one open, switch to it so
+  // the user watches the changes happen on the right page. Guarded so it never
+  // yanks the user out of component editing or a non-page route, and it only
+  // navigates once per target (currentPageId then matches aiBuildingPageId).
+  useEffect(() => {
+    if (!aiBuildingPageId || aiBuildingPageId === currentPageId) return;
+    if (editingComponentId) return;
+    if (routeType !== 'page' && routeType !== 'layers') return;
+    if (!pages.some((page) => page.id === aiBuildingPageId)) return;
+    setCurrentPageId(aiBuildingPageId);
+    navigateToLayers(aiBuildingPageId);
+  }, [aiBuildingPageId, currentPageId, editingComponentId, routeType, pages, setCurrentPageId, navigateToLayers]);
 
   const selectedLayerIdRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<string[]>([]);

@@ -863,20 +863,32 @@ function applyEvent(
       break;
     case 'page_changed': {
       // Authoritative post-turn snapshot from the server. Force the client draft
-      // in sync immediately (no-op if this page has no loaded draft) so the
-      // canvas and the review screenshot reflect the edit without waiting on the
-      // realtime broadcast. Record the per-page affected layer count for the card.
+      // in sync so the canvas and the review screenshot reflect the edit without
+      // waiting on the realtime broadcast. Record the per-page affected layer
+      // count for the card.
       const pagesStore = usePagesStore.getState();
+      const existingDraft = pagesStore.draftsByPageId[event.pageId];
 
-      // Diff against the current draft (before replacing it) so the canvas can
-      // step-reveal the layers this turn added. De-duped downstream against ids
-      // the realtime broadcast already animated, so the snapshot won't replay.
-      const previousLayers = pagesStore.draftsByPageId[event.pageId]?.layers ?? [];
-      const addedIds = findAddedLayerIds(previousLayers, event.layers);
-
-      pagesStore.setDraftLayers(event.pageId, event.layers);
-      if (addedIds.length > 0) {
-        useEditorStore.getState().markLayersEntering(addedIds);
+      if (existingDraft) {
+        // Diff against the current draft (before replacing it) so the canvas can
+        // step-reveal the layers this turn added. De-duped downstream against ids
+        // the realtime broadcast already animated, so the snapshot won't replay.
+        const addedIds = findAddedLayerIds(existingDraft.layers ?? [], event.layers);
+        pagesStore.setDraftLayers(event.pageId, event.layers);
+        if (addedIds.length > 0) {
+          useEditorStore.getState().markLayersEntering(addedIds);
+        }
+      } else {
+        // The agent edited a page the user hasn't opened, so there's no draft to
+        // update yet. Load it first (the auto-switch effect triggers this too;
+        // loadDraft de-dupes), then apply the authoritative layers so the canvas
+        // shows the final result once the page is open.
+        void (async () => {
+          await pagesStore.loadDraft(event.pageId);
+          if (usePagesStore.getState().draftsByPageId[event.pageId]) {
+            usePagesStore.getState().setDraftLayers(event.pageId, event.layers);
+          }
+        })();
       }
       // Load any assets these layers reference that aren't cached yet (e.g.
       // images the AI just uploaded) so they show without a manual refresh.
