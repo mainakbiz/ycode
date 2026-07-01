@@ -77,10 +77,25 @@ async function captureLayersAsBlob(
       doc.head.appendChild(colorStyle);
     }
 
-    // Inject font CSS (Google @import/links + custom @font-face) so custom fonts
-    // render instead of falling back to serif — mirrors what the live canvas does.
-    // Without this the capture (and the AI's visual self-review) sees wrong fonts.
-    useFontsStore.getState().injectFontsCss(doc);
+    // Inject font CSS (Google @import + custom @font-face + font class mappings)
+    // as a same-origin <style> so custom fonts render instead of the serif
+    // fallback — without this the capture (and the AI visual self-review) sees
+    // wrong fonts. We deliberately avoid injectFontsCss()'s cross-origin Google
+    // Font <link> elements: html-to-image can't read their cssRules and throws
+    // "Cannot access rules". A same-origin <style> with @import is readable, and
+    // html-to-image fetches + inlines the imported fonts itself.
+    const fontsCss = useFontsStore.getState().fontsCss;
+    if (fontsCss) {
+      // The canvas template ships an empty <style id="ycode-fonts-style"> — fill
+      // it (or create it) rather than duplicating the id.
+      let fontStyle = doc.getElementById('ycode-fonts-style') as HTMLStyleElement | null;
+      if (!fontStyle) {
+        fontStyle = doc.createElement('style');
+        fontStyle.id = 'ycode-fonts-style';
+        doc.head.appendChild(fontStyle);
+      }
+      fontStyle.textContent = fontsCss;
+    }
 
     // Wait for Tailwind CDN to initialize
     await new Promise((resolve) => setTimeout(resolve, 200));
