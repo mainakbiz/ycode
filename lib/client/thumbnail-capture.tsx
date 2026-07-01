@@ -19,6 +19,7 @@ import { componentsApi } from '@/lib/api';
 import { serializeLayers } from '@/lib/layer-utils';
 import { DEFAULT_ASSETS } from '@/lib/asset-constants';
 import { useColorVariablesStore } from '@/stores/useColorVariablesStore';
+import { useFontsStore } from '@/stores/useFontsStore';
 import type { Layer, Component } from '@/types';
 
 /** Default placeholder image for failed CORS fetches (base64 data URI) */
@@ -76,6 +77,11 @@ async function captureLayersAsBlob(
       doc.head.appendChild(colorStyle);
     }
 
+    // Inject font CSS (Google @import/links + custom @font-face) so custom fonts
+    // render instead of falling back to serif — mirrors what the live canvas does.
+    // Without this the capture (and the AI's visual self-review) sees wrong fonts.
+    useFontsStore.getState().injectFontsCss(doc);
+
     // Wait for Tailwind CDN to initialize
     await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -132,6 +138,17 @@ async function captureLayersAsBlob(
         )),
         new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
+    }
+
+    // Wait for the injected web fonts to finish loading so the captured image
+    // uses the real typefaces (otherwise text renders with the serif fallback).
+    try {
+      await Promise.race([
+        doc.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    } catch {
+      // Ignore — fall back to whatever is loaded so capture never hangs.
     }
 
     // Capture the rendered content
