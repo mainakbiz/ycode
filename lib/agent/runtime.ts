@@ -2,6 +2,7 @@ import { SYSTEM_INSTRUCTIONS } from '@/lib/mcp/instructions';
 import { DEFAULT_MAX_TOKENS, MAX_HISTORY_CHARS, MAX_HISTORY_MESSAGES, MAX_TOOL_TURNS } from '@/lib/agent/config';
 import { compactToolResult } from '@/lib/agent/tools/compact-result';
 import { getAgentToolMap, getAgentTools } from '@/lib/agent/tools/registry';
+import { estimateCostUsd } from '@/lib/agent/models';
 import { getCachedLayers } from '@/lib/mcp/page-layers';
 import { getComponentById } from '@/lib/repositories/componentRepository';
 
@@ -45,7 +46,9 @@ export type RuntimeEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; ok: boolean }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }
+  // `costUsd` is the approximate list-price cost for this user message, or null
+  // when the model has no pricing entry (custom ANTHROPIC_MODEL override).
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; costUsd: number | null }
   // Authoritative post-turn snapshot of a page the agent edited, computed from
   // the server cache so the client never has to race the realtime broadcast to
   // build the Changes card or screenshot the right state. `layersBefore` is the
@@ -196,7 +199,7 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
       usage.log(model, turn + 1);
       yield* emitPageChanges();
       yield* emitComponentChanges();
-      yield usage.toEvent();
+      yield usage.toEvent(model);
       yield { type: 'done', stopReason };
       return;
     }
@@ -234,7 +237,7 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
   usage.log(model, MAX_TOOL_TURNS);
   yield* emitPageChanges();
   yield* emitComponentChanges();
-  yield usage.toEvent();
+  yield usage.toEvent(model);
   yield { type: 'error', message: `Reached the tool-call limit (${MAX_TOOL_TURNS}) without finishing.` };
 }
 
@@ -270,13 +273,19 @@ class UsageTotals {
   }
 
   /** Serialize the totals for this user message into a client-facing event. */
-  toEvent(): RuntimeEvent {
+  toEvent(model: string): RuntimeEvent {
     return {
       type: 'usage',
       inputTokens: this.input,
       outputTokens: this.output,
       cacheWriteTokens: this.cacheWrite,
       cacheReadTokens: this.cacheRead,
+      costUsd: estimateCostUsd(model, {
+        inputTokens: this.input,
+        outputTokens: this.output,
+        cacheWriteTokens: this.cacheWrite,
+        cacheReadTokens: this.cacheRead,
+      }),
     };
   }
 }

@@ -75,6 +75,8 @@ export interface SessionUsage {
   outputTokens: number;
   cacheWriteTokens: number;
   cacheReadTokens: number;
+  /** Approximate list-price cost in USD; null once any turn had no pricing data. */
+  costUsd: number | null;
 }
 
 const EMPTY_USAGE: SessionUsage = {
@@ -82,6 +84,7 @@ const EMPTY_USAGE: SessionUsage = {
   outputTokens: 0,
   cacheWriteTokens: 0,
   cacheReadTokens: 0,
+  costUsd: 0,
 };
 
 /** A saved conversation, shown in the chat-history dropdown. */
@@ -169,7 +172,7 @@ type RuntimeEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; ok: boolean }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; costUsd: number | null }
   | { type: 'page_changed'; pageId: string; layerCount: number; layers: Layer[]; layersBefore?: Layer[] }
   | { type: 'component_changed'; componentId: string; name: string; variants: ComponentVariant[] }
   | { type: 'done'; stopReason: string | null }
@@ -1084,6 +1087,12 @@ function applyEvent(
           outputTokens: state.sessionUsage.outputTokens + event.outputTokens,
           cacheWriteTokens: state.sessionUsage.cacheWriteTokens + event.cacheWriteTokens,
           cacheReadTokens: state.sessionUsage.cacheReadTokens + event.cacheReadTokens,
+          // Once any turn lacks pricing data, the session total would be
+          // misleading — show no estimate instead of a wrong one.
+          costUsd:
+            state.sessionUsage.costUsd === null || event.costUsd === null
+              ? null
+              : state.sessionUsage.costUsd + event.costUsd,
         },
       }));
       break;

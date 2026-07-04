@@ -435,7 +435,13 @@ function formatTokens(count: number): string {
   return `${m < 10 ? m.toFixed(1) : Math.round(m)}M`;
 }
 
-/** Running token total for the active session, with a per-category tooltip. */
+/** Approximate USD amount, e.g. 0.0034 → "<$0.01", 0.42 → "$0.42", 12.5 → "$12.50". */
+function formatCost(costUsd: number): string {
+  if (costUsd > 0 && costUsd < 0.01) return '<$0.01';
+  return `$${costUsd.toFixed(2)}`;
+}
+
+/** Running token total and approximate cost for the active session, with a per-category tooltip. */
 function SessionUsageBadge({ usage }: { usage: SessionUsage }) {
   const total =
     usage.inputTokens + usage.outputTokens + usage.cacheWriteTokens + usage.cacheReadTokens;
@@ -453,6 +459,9 @@ function SessionUsageBadge({ usage }: { usage: SessionUsage }) {
       <TooltipTrigger className="flex items-center gap-1 px-1.5 text-[11px] tabular-nums text-muted-foreground">
         <Icon name="sparkles" className="size-3" />
         {formatTokens(total)}
+        {usage.costUsd !== null && (
+          <span>· {formatCost(usage.costUsd)}</span>
+        )}
       </TooltipTrigger>
       <TooltipContent className="tabular-nums">
         <p className="mb-1 font-medium">Session tokens</p>
@@ -463,6 +472,12 @@ function SessionUsageBadge({ usage }: { usage: SessionUsage }) {
               <span>{value.toLocaleString()}</span>
             </div>
           ))}
+          {usage.costUsd !== null && (
+            <div className="flex justify-between gap-4 border-t border-background/20 mt-0.5 pt-0.5">
+              <span className="text-background/70">Est. cost</span>
+              <span>{formatCost(usage.costUsd)}</span>
+            </div>
+          )}
         </div>
       </TooltipContent>
     </Tooltip>
