@@ -9,15 +9,23 @@ import { marked } from 'marked';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/components/ui/icon';
+import type { IconProps } from '@/components/ui/icon';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { providerOfModel } from '@/lib/agent/models';
+import { AGENT_PROVIDERS, providerOfModel } from '@/lib/agent/models';
 import { getLayerName } from '@/lib/layer-display-utils';
 import { findLayerById } from '@/lib/layer-utils';
 import { cn } from '@/lib/utils';
@@ -29,8 +37,11 @@ import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
 import type { Layer } from '@/types';
 
+import AgentKeyForm from './AgentKeyForm';
 import { toolCallLabel } from './ai-tool-labels';
 import ChatComposer from './ChatComposer';
+
+import type { AgentProviderId } from '@/lib/agent/models';
 
 const SUGGESTIONS = [
   'Add a hero section with a headline and a call to action',
@@ -377,9 +388,8 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
             <SessionUsageBadge usage={sessionUsage} />
             <Button
               size="sm"
-              variant="ghost"
-              className="size-7 p-0"
               onClick={newChat}
+              variant="secondary"
               aria-label="New chat"
               title="New chat"
             >
@@ -399,8 +409,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
             <SessionUsageBadge usage={sessionUsage} />
             <Button
               size="sm"
-              variant="ghost"
-              className="size-7 p-0"
+              variant="secondary"
               onClick={newChat}
               aria-label="New chat"
               title="New chat"
@@ -626,31 +635,85 @@ function ChatHistoryMenu({
   );
 }
 
-/** Shown when no AI provider is configured: explains the BYOK setup and links
- * to Settings → Agent where the user can add their API key. */
+/** Short, user-facing button labels keyed by provider. */
+const PROVIDER_SHORT_LABELS: Record<AgentProviderId, string> = {
+  anthropic: 'Claude',
+  openai: 'OpenAI',
+  google: 'Google Gemini',
+};
+
+/** Brand icons keyed by provider (registered in the Icon component). */
+const PROVIDER_ICONS: Record<AgentProviderId, IconProps['name']> = {
+  anthropic: 'claude',
+  openai: 'openai',
+  google: 'gemini',
+};
+
+/** Shown when no AI provider is configured: offers a one-click setup dialog for
+ * each provider (a faster path than Settings → Agent) plus a link to the full
+ * settings page for model selection. */
 function ConnectAgentState() {
   const router = useRouter();
+  const [setupProvider, setSetupProvider] = useState<AgentProviderId | null>(null);
+
+  const activeProvider = AGENT_PROVIDERS.find((provider) => provider.id === setupProvider) ?? null;
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex size-9 items-center justify-center rounded-full bg-muted">
-        <Icon name="sparkles" className="size-4 text-muted-foreground" />
+    <>
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex size-9 items-center justify-center rounded-full bg-muted">
+          <Icon name="sparkles" className="size-4 text-muted-foreground" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium">Connect your AI agent</p>
+          <p className="text-xs text-muted-foreground">
+            Choose a provider below and add your API key to start building.
+          </p>
+        </div>
+        <div className="flex w-full max-w-56 flex-col gap-2">
+          {AGENT_PROVIDERS.map((provider) => (
+            <Button
+              key={provider.id}
+              size="sm"
+              variant="secondary"
+              className="w-full"
+              onClick={() => setSetupProvider(provider.id)}
+            >
+              <Icon name={PROVIDER_ICONS[provider.id]} className="size-3.5" />
+              {PROVIDER_SHORT_LABELS[provider.id]}
+            </Button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline hover:text-foreground"
+          onClick={() => router.push('/ycode/settings/agent')}
+        >
+          Open Agent settings
+        </button>
       </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-medium">Connect your AI agent</p>
-        <p className="text-xs text-muted-foreground">
-          To use the Agent, add your own AI API key and choose which models it can use in
-          Settings.
-        </p>
-      </div>
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => router.push('/ycode/settings/agent')}
-      >
-        Go to Agent settings
-      </Button>
-    </div>
+
+      <Dialog open={activeProvider !== null} onOpenChange={(open) => !open && setSetupProvider(null)}>
+        {activeProvider && (
+          <DialogContent width="26rem">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Icon name={PROVIDER_ICONS[activeProvider.id]} className="size-3.5" />
+                Connect {PROVIDER_SHORT_LABELS[activeProvider.id]}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="border-t -mt-3 pt-4">
+              <AgentKeyForm
+                provider={activeProvider}
+                submitLabel="Connect"
+                onDone={() => setSetupProvider(null)}
+                onCancel={() => setSetupProvider(null)}
+              />
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
   );
 }
 

@@ -19,7 +19,6 @@ import {
   FieldLegend,
 } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -28,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import AgentKeyForm from '@/app/(builder)/ycode/components/ai/AgentKeyForm';
 import { agentSettingsApi } from '@/lib/api';
 import { AGENT_MODELS, AGENT_PROVIDERS } from '@/lib/agent/models';
 import { cn } from '@/lib/utils';
@@ -365,7 +365,7 @@ function ProviderCard({
 
       {isReplacing && (
         <div className="mt-4">
-          <KeyForm
+          <AgentKeyForm
             provider={provider}
             submitLabel="Save key"
             onDone={() => setIsReplacing(false)}
@@ -453,7 +453,7 @@ function AddProviderCard({ providers, isFirst, onDone, onCancel }: AddProviderCa
         </Select>
       </Field>
 
-      <KeyForm
+      <AgentKeyForm
         key={provider.id}
         provider={provider}
         submitLabel="Connect"
@@ -461,129 +461,5 @@ function AddProviderCard({ providers, isFirst, onDone, onCancel }: AddProviderCa
         onCancel={onCancel}
       />
     </div>
-  );
-}
-
-// ── Shared key input + verify-and-save flow ─────────────────────────────────
-
-interface KeyFormProps {
-  provider: AgentProviderOption;
-  submitLabel: string;
-  onDone: () => void;
-  onCancel?: () => void;
-}
-
-/**
- * Key input with a verify-then-save submit: the key is tested against the
- * provider's API first and only stored when valid. If verification fails (e.g.
- * a network restriction on the server), a "save anyway" escape hatch appears.
- */
-function KeyForm({ provider, submitLabel, onDone, onCancel }: KeyFormProps) {
-  const saveSettings = useAgentSettingsStore((s) => s.saveSettings);
-
-  const [keyInput, setKeyInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [allowUnverified, setAllowUnverified] = useState(false);
-
-  const inputId = `${provider.id}-key-input`;
-
-  const handleSubmit = async (skipVerification: boolean) => {
-    const trimmed = keyInput.trim();
-    if (!trimmed) return;
-
-    try {
-      setIsSubmitting(true);
-      setError(null);
-
-      if (!skipVerification) {
-        const test = await agentSettingsApi.testKey(provider.id, trimmed);
-        if (test.error) {
-          setError(test.error);
-          setAllowUnverified(true);
-          return;
-        }
-      }
-
-      const success = await saveSettings({ keys: { [provider.id]: trimmed } });
-      if (!success) {
-        setError(useAgentSettingsStore.getState().error ?? 'Failed to save API key');
-        return;
-      }
-      onDone();
-    } catch (err) {
-      console.error('Error saving API key:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save API key');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Field>
-      <FieldLabel htmlFor={inputId}>API key</FieldLabel>
-      <FieldDescription>
-        Create a key in the{' '}
-        <a
-          href={provider.consoleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {provider.consoleLabel}
-        </a>
-        . It&apos;s verified, then stored on your server — never sent to the browser.
-      </FieldDescription>
-      <div className="flex gap-2">
-        <Input
-          id={inputId}
-          type="password"
-          placeholder={provider.keyPlaceholder}
-          value={keyInput}
-          onChange={(e) => {
-            setKeyInput(e.target.value);
-            setError(null);
-            setAllowUnverified(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isSubmitting && keyInput.trim()) {
-              void handleSubmit(false);
-            }
-          }}
-          autoComplete="off"
-          disabled={isSubmitting}
-          className="flex-1"
-        />
-        <Button
-          onClick={() => handleSubmit(false)}
-          disabled={isSubmitting || !keyInput.trim()}
-        >
-          {isSubmitting ? <Spinner className="size-4" /> : submitLabel}
-        </Button>
-        {onCancel && (
-          <Button
-            variant="secondary"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-        )}
-      </div>
-      {error && (
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-destructive">{error}</p>
-          {allowUnverified && (
-            <button
-              type="button"
-              className="text-xs underline text-muted-foreground hover:text-foreground"
-              onClick={() => handleSubmit(true)}
-              disabled={isSubmitting}
-            >
-              Save anyway
-            </button>
-          )}
-        </div>
-      )}
-    </Field>
   );
 }
