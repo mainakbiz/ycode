@@ -361,6 +361,10 @@ function stripMessageForStorage(message: ChatMessage): ChatMessage {
     thinkingMs: message.thinkingMs,
     changes: message.changes,
     review: message.review,
+    // Keep the reference metadata so @page/component/layer badges re-render
+    // when a chat is reloaded from history (the raw "@label" text alone can't
+    // reconstruct the pill's type/icon).
+    mentions: message.mentions,
   };
 }
 
