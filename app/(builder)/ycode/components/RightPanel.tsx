@@ -15,9 +15,9 @@ interface RightPanelProps {
 }
 
 /**
- * Right-hand column shell hosting the top-level Agent / Human switch.
- * "Agent" surfaces the AI chat; "Human" surfaces the manual property
- * editor (Design / Settings / Interactions) that lives in RightSidebar.
+ * Right-hand column shell hosting the top-level Human / Agent switch.
+ * "Human" surfaces the manual property editor (Design / Settings /
+ * Interactions) that lives in RightSidebar; "Agent" surfaces the AI chat.
  */
 export default function RightPanel({ onLayerUpdate }: RightPanelProps) {
   const isAgent = useAiChatStore((state) => state.isOpen);
@@ -37,8 +37,8 @@ export default function RightPanel({ onLayerUpdate }: RightPanelProps) {
       <div className="px-4 pt-4 shrink-0">
         <Tabs value={isAgent ? 'agent' : 'human'} onValueChange={handleModeChange}>
           <TabsList className="w-full">
-            <TabsTrigger value="agent" className="flex-1">Agent</TabsTrigger>
             <TabsTrigger value="human" className="flex-1">Human</TabsTrigger>
+            <TabsTrigger value="agent" className="flex-1">Agent</TabsTrigger>
           </TabsList>
         </Tabs>
         <hr className="mt-4" />
