@@ -22,8 +22,15 @@ import {
   generateId,
 } from '@/lib/mcp/utils';
 import type { RichTextBlock } from '@/lib/mcp/utils';
-import { buildComponentInstanceLayer } from '@/lib/component-utils';
+import { buildComponentInstanceLayer, detachSpecificLayerFromComponent } from '@/lib/component-utils';
+import {
+  cleanLayersForComponentCreation,
+  regenerateIdsWithInteractionRemapping,
+  replaceLayerWithComponentInstance,
+} from '@/lib/layer-utils';
+import { EMPTY_OVERRIDES, createTextComponentVariableValue } from '@/lib/variable-utils';
 import { getCachedLayers as getPageLayers, saveCachedLayers } from '@/lib/mcp/page-layers';
+import { getAllPages } from '@/lib/repositories/pageRepository';
 import {
   broadcastComponentCreated,
   broadcastComponentUpdated,
@@ -187,6 +194,274 @@ content overrides are not settable here yet, so it shows the component's default
           type: 'text' as const,
           text: JSON.stringify({
             message: `Replaced layer with "${component.name}" component instance`,
+            layer_id,
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'set_component_instance',
+    `Customize a component INSTANCE on a page: override per-instance content (text, image,
+link, icon, media, nested variant) and/or switch which variant the instance renders.
+
+This is how you make several instances of the same component show DIFFERENT content
+(e.g. a grid of Feature Cards each with its own title/image). It does NOT edit the master
+component — structure stays shared and read-only. Only variables defined on the component
+can be overridden; call get_component on the instance's componentId to see the variable ids
+and their types. Each override targets one variable by id; the value shape is chosen from the
+variable's declared type, so you only pass the relevant field.`,
+    {
+      page_id: z.string().describe('The page ID the instance lives on'),
+      layer_id: z.string().describe('The component-instance layer ID (has componentInstance: true in get_layers)'),
+      variant_id: z.string().optional()
+        .describe('Switch the instance to this variant of the component. Omit to leave the variant unchanged.'),
+      reset_overrides: z.boolean().optional()
+        .describe('Clear ALL existing per-instance overrides before applying any new ones (revert to component defaults).'),
+      overrides: z.array(z.object({
+        variable_id: z.string().describe('Component variable ID to override (from get_component)'),
+        clear: z.boolean().optional().describe('Remove this variable\'s override, reverting to the component default'),
+        text: z.string().optional().describe('For text/rich_text variables: plain text content'),
+        rich_content: z.array(richTextBlockSchema).optional()
+          .describe('For text/rich_text variables: structured content blocks (overrides `text`)'),
+        asset_id: z.string().optional().describe('For image/icon/audio/video variables: asset ID to display'),
+        alt: z.string().optional().describe('For image variables: alt text'),
+        url: z.string().optional().describe('For link variables: external URL'),
+        link_page_id: z.string().optional().describe('For link variables: link to this page by ID (alternative to url)'),
+        variant_id: z.string().optional().describe('For variant variables: the nested component variant ID to render'),
+      })).optional().describe('Per-variable content overrides for this instance'),
+    },
+    async ({ page_id, layer_id, variant_id, reset_overrides, overrides }) => {
+      const layers = await getPageLayers(page_id);
+      const target = findLayerById(layers, layer_id);
+      if (!target) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" not found.` }], isError: true };
+      }
+      if (!target.componentId) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" is not a component instance.` }], isError: true };
+      }
+
+      const component = await getComponentById(target.componentId);
+      if (!component) {
+        return { content: [{ type: 'text' as const, text: `Error: Component "${target.componentId}" not found.` }], isError: true };
+      }
+
+      if (variant_id && !(component.variants ?? []).some((v) => v.id === variant_id)) {
+        return { content: [{ type: 'text' as const, text: `Error: Variant "${variant_id}" does not exist on component "${component.name}".` }], isError: true };
+      }
+
+      const variablesById = new Map<string, ComponentVariable>(
+        (component.variables ?? []).map((v) => [v.id, v]),
+      );
+
+      // Start from a canonical, fully-populated overrides object so every bucket
+      // exists, then layer existing overrides (unless resetting) on top.
+      const base = reset_overrides ? EMPTY_OVERRIDES : (target.componentOverrides ?? EMPTY_OVERRIDES);
+      const merged: NonNullable<Layer['componentOverrides']> = {
+        text: { ...(base.text ?? {}) },
+        rich_text: { ...(base.rich_text ?? {}) },
+        image: { ...(base.image ?? {}) },
+        link: { ...(base.link ?? {}) },
+        audio: { ...(base.audio ?? {}) },
+        video: { ...(base.video ?? {}) },
+        icon: { ...(base.icon ?? {}) },
+        variant: { ...(base.variant ?? {}) },
+        variableLinks: { ...(base.variableLinks ?? {}) },
+      };
+
+      const results: Array<{ status: string; detail: string }> = [];
+
+      for (const entry of overrides ?? []) {
+        const variable = variablesById.get(entry.variable_id);
+        if (!variable) {
+          results.push({ status: 'error', detail: `Variable "${entry.variable_id}" not found on component "${component.name}"` });
+          continue;
+        }
+        const category = variable.type ?? 'text';
+        const bucket = merged[category] as Record<string, ComponentVariableValue> | undefined;
+        if (!bucket) {
+          results.push({ status: 'error', detail: `Unsupported variable type "${category}" for "${variable.name}"` });
+          continue;
+        }
+
+        if (entry.clear) {
+          delete bucket[entry.variable_id];
+          results.push({ status: 'ok', detail: `Cleared override for "${variable.name}"` });
+          continue;
+        }
+
+        const value = buildOverrideValue(category, entry);
+        if (!value) {
+          results.push({ status: 'error', detail: `No usable value provided for "${variable.name}" (${category})` });
+          continue;
+        }
+        bucket[entry.variable_id] = value;
+        results.push({ status: 'ok', detail: `Overrode "${variable.name}" (${category})` });
+      }
+
+      const errors = results.filter((r) => r.status === 'error');
+      if (overrides && overrides.length > 0 && errors.length === overrides.length && variant_id === undefined && !reset_overrides) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ message: 'All overrides failed', results }) }],
+          isError: true,
+        };
+      }
+
+      const updated = updateLayerById(layers, layer_id, (l) => ({
+        ...l,
+        ...(variant_id !== undefined ? { componentVariantId: variant_id } : {}),
+        componentOverrides: merged,
+      }));
+      await saveCachedLayers(page_id, updated);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Updated "${component.name}" instance`,
+            layer_id,
+            ...(variant_id !== undefined ? { variant_id } : {}),
+            ...(reset_overrides ? { reset: true } : {}),
+            results,
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'detach_component_instance',
+    `Detach a component instance on a PAGE, converting it back into plain, editable layers
+(a copy of the component's current structure with fresh IDs). Use when the user wants to
+break the link to the master so the layers can be edited freely on this page only.`,
+    {
+      page_id: z.string().describe('The page ID'),
+      layer_id: z.string().describe('The component-instance layer ID to detach'),
+    },
+    async ({ page_id, layer_id }) => {
+      const layers = await getPageLayers(page_id);
+      const target = findLayerById(layers, layer_id);
+      if (!target) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" not found.` }], isError: true };
+      }
+      if (!target.componentId) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" is not a component instance.` }], isError: true };
+      }
+
+      const component = await getComponentById(target.componentId);
+      const updated = detachSpecificLayerFromComponent(layers, layer_id, component ?? undefined);
+      await saveCachedLayers(page_id, updated);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Detached instance of "${component?.name ?? 'component'}" into plain layers`,
+            page_id,
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'reorder_component_variants',
+    `Reorder a component's variants. The FIRST id in the list becomes the primary ("Default")
+variant used by instances that don't pin a specific variant. Every existing variant id must
+be included exactly once.`,
+    {
+      component_id: z.string().describe('The component ID'),
+      variant_ids: z.array(z.string()).min(1)
+        .describe('All variant IDs in the desired order (index 0 = primary)'),
+    },
+    async ({ component_id, variant_ids }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return { content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }], isError: true };
+      }
+      const variants = component.variants ?? [];
+      if (variants.length === 0) {
+        return { content: [{ type: 'text' as const, text: 'Error: Component has no named variants to reorder.' }], isError: true };
+      }
+
+      const currentIds = new Set(variants.map((v) => v.id));
+      const requestedIds = new Set(variant_ids);
+      if (variant_ids.length !== variants.length
+        || variant_ids.length !== requestedIds.size
+        || ![...currentIds].every((id) => requestedIds.has(id))) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: variant_ids must list every existing variant exactly once. Current: [${[...currentIds].join(', ')}].` }],
+          isError: true,
+        };
+      }
+
+      const byId = new Map(variants.map((v) => [v.id, v]));
+      const reordered = variant_ids.map((id) => byId.get(id)!) as ComponentVariant[];
+
+      await updateComponent(component_id, { variants: reordered });
+      broadcastComponentUpdated(component_id, { variants: reordered }).catch(() => {});
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Reordered variants; primary is now "${reordered[0].name}"`,
+            order: reordered.map((v) => ({ id: v.id, name: v.name })),
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'create_component_from_layer',
+    `Turn an existing PAGE layer (and its subtree) into a new reusable component, then replace
+it in place with an instance of that component. Use when the user wants to "make this a
+component" / "componentize this section" so it can be reused elsewhere.
+
+The extracted structure becomes the master component; the original layer becomes an instance
+of it (its children become read-only). CMS/page bindings that only make sense in the original
+context are stripped. This v1 does not auto-create variables — add them afterwards with
+update_component + update_component_layers if the user wants per-instance overrides.`,
+    {
+      page_id: z.string().describe('The page ID'),
+      layer_id: z.string().describe('The layer to convert into a component (its subtree is copied)'),
+      name: z.string().describe('Name for the new component'),
+    },
+    async ({ page_id, layer_id, name }) => {
+      if (layer_id === 'body') {
+        return { content: [{ type: 'text' as const, text: 'Error: The page body cannot be turned into a component.' }], isError: true };
+      }
+
+      const layers = await getPageLayers(page_id);
+      const target = findLayerById(layers, layer_id);
+      if (!target) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" not found.` }], isError: true };
+      }
+      if (target.componentId) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" is already a component instance.` }], isError: true };
+      }
+
+      // Deep-clone the subtree with fresh IDs (remapping interaction references),
+      // then strip bindings that don't make sense inside a standalone component.
+      const cloned = regenerateIdsWithInteractionRemapping(
+        JSON.parse(JSON.stringify(target)) as Layer,
+      );
+      const cleaned = cleanLayersForComponentCreation([cloned]);
+
+      const component = await createComponent({ name, layers: cleaned });
+      broadcastComponentCreated(component).catch(() => {});
+
+      const updated = replaceLayerWithComponentInstance(layers, layer_id, component.id);
+      await saveCachedLayers(page_id, updated);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Created component "${name}" from layer and replaced it with an instance`,
+            component_id: component.id,
             layer_id,
           }),
         }],
@@ -764,6 +1039,70 @@ Pass variant_id to target a specific named variant; omit it to update the primar
   );
 
   server.tool(
+    'delete_component_variable',
+    `Delete a variable from a component and clean up every reference: unlink it from all of the
+component's variant layers, and remove any per-instance overrides that referenced it across
+pages. Use this instead of update_component's variables list when removing a variable, so no
+dangling links or orphaned overrides are left behind.`,
+    {
+      component_id: z.string().describe('The component ID'),
+      variable_id: z.string().describe('The variable ID to delete'),
+    },
+    async ({ component_id, variable_id }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return { content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }], isError: true };
+      }
+      const variable = (component.variables ?? []).find((v) => v.id === variable_id);
+      if (!variable) {
+        return { content: [{ type: 'text' as const, text: `Error: Variable "${variable_id}" not found on component "${component.name}".` }], isError: true };
+      }
+      const category = variable.type ?? 'text';
+
+      const updatedVariables = (component.variables ?? []).filter((v) => v.id !== variable_id);
+      const variants: ComponentVariant[] = (component.variants && component.variants.length > 0)
+        ? component.variants
+        : [{ id: generateId(), name: 'Default', layers: component.layers ?? [] }];
+      const updatedVariants = variants.map((v) => ({
+        ...v,
+        layers: unlinkVariableFromLayers(v.layers ?? [], variable_id),
+      }));
+
+      await updateComponent(component_id, { variables: updatedVariables, variants: updatedVariants });
+      broadcastComponentUpdated(component_id, { variables: updatedVariables, variants: updatedVariants }).catch(() => {});
+
+      // Sweep pages so instances of this component don't keep overrides that
+      // point at the now-deleted variable. Best-effort: never fail the delete
+      // because a page couldn't be cleaned.
+      let cleanedPages = 0;
+      try {
+        const pages = await getAllPages();
+        for (const page of pages) {
+          const before = await getPageLayers(page.id);
+          const after = cleanInstanceOverridesInLayers(before, component_id, variable_id, category);
+          if (JSON.stringify(after) !== JSON.stringify(before)) {
+            await saveCachedLayers(page.id, after);
+            cleanedPages += 1;
+          }
+        }
+      } catch (error) {
+        console.error('[delete_component_variable] page override cleanup failed:', error);
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Deleted variable "${variable.name}" from "${component.name}"`,
+            unlinked_from_variants: updatedVariants.length,
+            pages_cleaned: cleanedPages,
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
     'delete_component',
     'Delete a component. This detaches it from all pages and components that use it.',
     { component_id: z.string().describe('The component ID to delete') },
@@ -785,6 +1124,171 @@ Pass variant_id to target a specific named variant; omit it to update the primar
       };
     },
   );
+}
+
+/** Media variable slots whose linked variable id lives on `.src.id`. */
+const MEDIA_LINK_SLOTS = ['image', 'audio', 'video', 'icon'] as const;
+
+/**
+ * Recursively strip every link to `variableId` from a component's layer tree:
+ * text/media/link variable slots plus the top-level variant-variable link. Used
+ * when deleting a variable so no layer keeps a dangling reference.
+ */
+function unlinkVariableFromLayers(layers: Layer[], variableId: string): Layer[] {
+  return layers.map((layer) => {
+    let next: Layer = layer;
+
+    if (layer.variables) {
+      const vars = { ...layer.variables } as Record<string, unknown>;
+      let changed = false;
+
+      const textVar = vars.text as { id?: string } | undefined;
+      if (textVar?.id === variableId) {
+        const { id: _omitTextId, ...rest } = textVar;
+        vars.text = rest;
+        changed = true;
+      }
+
+      for (const slot of MEDIA_LINK_SLOTS) {
+        const mediaVar = vars[slot] as { src?: { id?: string } } | undefined;
+        if (mediaVar?.src?.id === variableId) {
+          const { id: _omitSrcId, ...restSrc } = mediaVar.src;
+          vars[slot] = { ...mediaVar, src: restSrc };
+          changed = true;
+        }
+      }
+
+      const linkVar = vars.link as { variable_id?: string } | undefined;
+      if (linkVar?.variable_id === variableId) {
+        const { variable_id: _omitLinkVar, ...restLink } = linkVar;
+        vars.link = restLink;
+        changed = true;
+      }
+
+      if (changed) next = { ...next, variables: vars as Layer['variables'] };
+    }
+
+    if (next.componentVariantVariableId === variableId) {
+      const { componentVariantVariableId: _omitVariant, ...rest } = next;
+      next = rest as Layer;
+    }
+
+    if (next.children && next.children.length > 0) {
+      next = { ...next, children: unlinkVariableFromLayers(next.children, variableId) };
+    }
+
+    return next;
+  });
+}
+
+/**
+ * Recursively remove per-instance overrides that reference a deleted variable
+ * from instances of `componentId` on a page tree. Clears the value from the
+ * variable's type bucket, drops matching variableLinks, and strips a dangling
+ * variant-variable link.
+ */
+function cleanInstanceOverridesInLayers(
+  layers: Layer[],
+  componentId: string,
+  variableId: string,
+  category: string,
+): Layer[] {
+  return layers.map((layer) => {
+    let next: Layer = layer;
+
+    if (layer.componentId === componentId && layer.componentOverrides) {
+      const overrides = { ...layer.componentOverrides } as Record<string, unknown>;
+
+      if (category !== 'variableLinks') {
+        const bucket = overrides[category] as Record<string, unknown> | undefined;
+        if (bucket && bucket[variableId] !== undefined) {
+          const { [variableId]: _omitOverride, ...remaining } = bucket;
+          overrides[category] = Object.keys(remaining).length > 0 ? remaining : undefined;
+        }
+      }
+
+      const links = overrides.variableLinks as Record<string, string> | undefined;
+      if (links?.[variableId]) {
+        const { [variableId]: _omitLink, ...remainingLinks } = links;
+        overrides.variableLinks = Object.keys(remainingLinks).length > 0 ? remainingLinks : undefined;
+      }
+
+      next = { ...layer, componentOverrides: overrides as Layer['componentOverrides'] };
+    }
+
+    if (next.componentVariantVariableId === variableId) {
+      const { componentVariantVariableId: _omitVariant, ...rest } = next;
+      next = rest as Layer;
+    }
+
+    if (next.children && next.children.length > 0) {
+      next = {
+        ...next,
+        children: cleanInstanceOverridesInLayers(next.children, componentId, variableId, category),
+      };
+    }
+
+    return next;
+  });
+}
+
+/** Fields the agent can pass to describe a single instance override. */
+interface OverrideEntryInput {
+  text?: string;
+  rich_content?: RichTextBlock[];
+  asset_id?: string;
+  alt?: string;
+  url?: string;
+  link_page_id?: string;
+  variant_id?: string;
+}
+
+/**
+ * Build a typed ComponentVariableValue for a per-instance override from the
+ * agent's friendly input, choosing the shape from the variable's declared type.
+ * Returns null when the entry carries no usable value for that type.
+ */
+function buildOverrideValue(category: string, entry: OverrideEntryInput): ComponentVariableValue | null {
+  switch (category) {
+    case 'text':
+    case 'rich_text':
+      if (entry.rich_content && entry.rich_content.length > 0) {
+        return createTextComponentVariableValue(buildTiptapDoc(entry.rich_content));
+      }
+      if (entry.text !== undefined) {
+        return createTextComponentVariableValue(getTiptapTextContent(entry.text));
+      }
+      return null;
+
+    case 'image':
+      if (!entry.asset_id) return null;
+      return {
+        src: { type: 'asset', data: { asset_id: entry.asset_id } },
+        ...(entry.alt !== undefined ? { alt: { type: 'dynamic_text', data: { content: entry.alt } } } : {}),
+      } as ComponentVariableValue;
+
+    case 'icon':
+    case 'audio':
+    case 'video':
+      if (!entry.asset_id) return null;
+      return { src: { type: 'asset', data: { asset_id: entry.asset_id } } } as ComponentVariableValue;
+
+    case 'link':
+      if (entry.url !== undefined) {
+        return { type: 'url', url: { type: 'dynamic_text', data: { content: entry.url } } } as ComponentVariableValue;
+      }
+      if (entry.link_page_id) {
+        return { type: 'page', page: { id: entry.link_page_id } } as ComponentVariableValue;
+      }
+      return null;
+
+    case 'variant':
+      if (!entry.variant_id) return null;
+      return { variant_id: entry.variant_id } as ComponentVariableValue;
+
+    default:
+      return null;
+  }
 }
 
 function countLayers(layers: Layer[]): number {

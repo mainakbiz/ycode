@@ -257,10 +257,28 @@ variant_id to update_component_layers to target one (omit for the primary varian
 **Reusing a component on a page:** insert a real instance instead of rebuilding its markup.
 - add_component_instance — insert an instance under a parent layer (optional variant_id / position).
 - replace_layer_with_component — swap an existing layer for an instance in place (for "use component X instead of this layer").
-These create a proper component-instance layer that renders the master's tree. The instance
-shows the component's default content (per-instance content overrides are not settable via the
-agent yet), and its children stay read-only. NEVER rebuild a component's markup by hand or embed
-it as rich text when an instance will do. These tools are in the load-on-demand "components" group.
+These create a proper component-instance layer that renders the master's tree; its children stay
+read-only. NEVER rebuild a component's markup by hand or embed it as rich text when an instance
+will do.
+
+**Customizing an instance:** a fresh instance shows the component's default content. To make
+several instances differ (e.g. a grid of cards each with its own title/image), use
+set_component_instance to override the instance's variables and/or switch its variant. Call
+get_component on the instance's componentId first to read the variable ids and types
+(get_layers also shows each instance's componentId, componentVariantId, and overrideSummary).
+Each override targets one variable_id; pass only the field for its type (text, asset_id, url,
+variant_id, etc.). Overriding does NOT change the master or other instances.
+
+**Detaching:** detach_component_instance converts an instance back into plain, editable layers
+on that page (breaks the link to the master). Use only when the user wants to edit the copy freely.
+
+**Componentizing:** create_component_from_layer turns an existing page layer + its subtree into a
+new component and replaces it in place with an instance ("make this a component").
+
+Editing the MASTER changes ALL instances: update_component_layers (structure/content), the
+variant tools, reorder_component_variants (first id = primary), and delete_component_variable
+(removes a variable and cleans up every link/override — prefer it over rewriting the variables
+list). These tools are in the load-on-demand "components" group.
 
 ### CMS / Collections
 

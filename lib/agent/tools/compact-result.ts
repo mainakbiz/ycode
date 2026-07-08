@@ -27,6 +27,9 @@ const BLOCK_NODE_TYPES = new Set([
   'codeBlock',
 ]);
 
+/** Override buckets on a component instance, keyed by component-variable id. */
+const OVERRIDE_CATEGORIES = ['text', 'rich_text', 'image', 'link', 'audio', 'video', 'icon', 'variant'] as const;
+
 interface RawLayer {
   id?: string;
   name?: string;
@@ -34,6 +37,8 @@ interface RawLayer {
   classes?: string | string[];
   hidden?: boolean;
   componentId?: string;
+  componentVariantId?: string;
+  componentOverrides?: Record<string, unknown>;
   settings?: { tag?: string };
   attributes?: { id?: string };
   variables?: { text?: { data?: { content?: unknown } } } & Record<string, unknown>;
@@ -101,8 +106,17 @@ function compactLayer(layer: RawLayer, includeVariableRefs = false): Record<stri
   if (layer.settings?.tag) out.tag = layer.settings.tag;
   if (layer.attributes?.id) out.htmlId = layer.attributes.id;
   if (layer.hidden) out.hidden = true;
-  // Component instances are read-only (edit the master component instead).
-  if (layer.componentId) out.componentInstance = true;
+  // Component instances: the children are read-only (edit the master component to
+  // change structure), but content is customizable per instance via
+  // set_component_instance. Surface the master id, selected variant, and which
+  // variables already carry overrides so the agent can read/rewire them.
+  if (layer.componentId) {
+    out.componentInstance = true;
+    out.componentId = layer.componentId;
+    if (layer.componentVariantId) out.componentVariantId = layer.componentVariantId;
+    const overrideSummary = summarizeOverrides(layer.componentOverrides);
+    if (overrideSummary) out.overrideSummary = overrideSummary;
+  }
 
   if (includeVariableRefs) {
     const refs = collectVariableRefs(layer.variables) ?? {};
@@ -140,6 +154,28 @@ function collectVariableRefs(variables?: Record<string, unknown>): Record<string
   }
 
   return Object.keys(refs).length > 0 ? refs : null;
+}
+
+/**
+ * Summarize which component variables a page instance currently overrides, per
+ * category, e.g. { text: ["cvar-title"], image: ["cvar-hero"] }. Keeps the
+ * agent aware of existing overrides without shipping their full Tiptap/settings
+ * payloads.
+ */
+function summarizeOverrides(
+  overrides?: Record<string, unknown>,
+): Record<string, string[]> | null {
+  if (!overrides) return null;
+
+  const summary: Record<string, string[]> = {};
+  for (const category of OVERRIDE_CATEGORIES) {
+    const bucket = overrides[category];
+    if (!bucket || typeof bucket !== 'object') continue;
+    const ids = Object.keys(bucket as Record<string, unknown>);
+    if (ids.length > 0) summary[category] = ids;
+  }
+
+  return Object.keys(summary).length > 0 ? summary : null;
 }
 
 interface RawComponent {

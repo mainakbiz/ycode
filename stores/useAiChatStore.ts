@@ -965,6 +965,12 @@ function clearAiActiveLayerIds(): void {
   editor.setAiActiveItemIds([]);
   editor.setAiBuildingPageId(null);
   editor.setAiBuildingComponentId(null);
+  // If the AI opened component edit mode this turn (the user wasn't already
+  // editing it), return them to their page now that the turn is done.
+  if (editor.aiOpenedComponentEdit) {
+    editor.setPendingAiComponentExit(true);
+    editor.setAiOpenedComponentEdit(false);
+  }
 }
 
 function applyEvent(

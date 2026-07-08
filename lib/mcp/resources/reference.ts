@@ -70,6 +70,8 @@ const ELEMENTS_REFERENCE_JSON = JSON.stringify({
     links_cannot_nest: true,
     component_instance_children_are_readonly: true,
     create_component_instances_with: ['add_component_instance', 'replace_layer_with_component'],
+    customize_component_instance_with: 'set_component_instance',
+    detach_component_instance_with: 'detach_component_instance',
   },
   element_types: {
     structure: {

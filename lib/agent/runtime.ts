@@ -456,7 +456,10 @@ const AGENT_POLICY = [
 const TOOL_OUTPUT_NOTE =
   'get_layers returns a compact tree: each node has id, type, optional name (custom name), ' +
   'text (current text content), classes (the live Tailwind classes — your source of truth for current styling), ' +
-  'tag, hidden, componentInstance, and children. The verbose `design` object is omitted; read current styling from `classes`. ' +
+  'tag, hidden, componentInstance, and children. Component instances also carry componentId (the master component), ' +
+  'componentVariantId (the selected variant, if any), and overrideSummary (which variable ids are already overridden, per category). ' +
+  'An instance\'s children are read-only — edit the master with the component tools to change structure — but you CAN customize an instance\'s content per page with set_component_instance (call get_component on its componentId to see the variable ids). ' +
+  'The verbose `design` object is omitted; read current styling from `classes`. ' +
   'To change styling, call update_layer_design with only the categories you want — it merges into existing design, so you never need to resend the full design. ' +
   'Only the core building tools are attached up front. Tools for CMS/collections, components, shared styles, animations, localization, and site settings ' +
   'load on demand — call load_tools with the group(s) you need (its description lists every group and tool) as soon as you know the task requires them, then use the loaded tools normally.';
@@ -701,10 +704,17 @@ function collectPageIdsFromInput(input: unknown): string[] {
   return [...ids];
 }
 
-/** Tools that place a component instance on a page. They reference a
- * `component_id` but mutate the page tree, not the component definition, so they
- * are excluded from component-edit tracking. */
-const COMPONENT_INSTANCE_TOOLS = new Set(['add_component_instance', 'replace_layer_with_component']);
+/** Tools that operate on a component instance living on a page. They may
+ * reference a component but mutate the PAGE tree (add/replace/override/detach an
+ * instance), not the component definition, so they are excluded from
+ * component-edit tracking (and must not auto-open component edit mode). */
+const COMPONENT_INSTANCE_TOOLS = new Set([
+  'add_component_instance',
+  'replace_layer_with_component',
+  'set_component_instance',
+  'detach_component_instance',
+  'create_component_from_layer',
+]);
 
 /** Recursively collect every `component_id` referenced by a tool call's input
  * (handles nested `operations` arrays from update_component_layers). */

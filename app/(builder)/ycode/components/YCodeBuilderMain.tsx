@@ -130,6 +130,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const aiBuildingPageId = useEditorStore((state) => state.aiBuildingPageId);
   const aiBuildingComponentId = useEditorStore((state) => state.aiBuildingComponentId);
   const aiBuildingComponentVariantId = useEditorStore((state) => state.aiBuildingComponentVariantId);
+  const pendingAiComponentExit = useEditorStore((state) => state.pendingAiComponentExit);
   const builderDataPreloaded = useEditorStore((state) => state.builderDataPreloaded);
   const setBuilderDataPreloaded = useEditorStore((state) => state.setBuilderDataPreloaded);
   const collectionItemSheet = useEditorStore((state) => state.collectionItemSheet);
@@ -1522,6 +1523,19 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
 
     // Selection will be restored by the URL sync effect
   }, [navigateToLayers, navigateToComponent, liveComponentUpdates, pages]);
+
+  // After an AI turn that opened component edit mode on its own (the user was on
+  // a page and only mentioned/asked to edit a component), return the user to
+  // their page so they aren't stranded in edit mode. The store sets
+  // `pendingAiComponentExit` once the turn (including any review passes) settles.
+  useEffect(() => {
+    if (!pendingAiComponentExit) return;
+    const { editingComponentId: activeComponentId, setPendingAiComponentExit } = useEditorStore.getState();
+    setPendingAiComponentExit(false);
+    if (activeComponentId) {
+      void handleExitComponentEditMode();
+    }
+  }, [pendingAiComponentExit, handleExitComponentEditMode]);
 
   // Global keyboard shortcuts — reads selection from refs to avoid recreating handler on every selection change
   useEffect(() => {

@@ -100,6 +100,11 @@ interface EditorActions {
   /** Set the component the AI is actively editing (drives auto-opening component
    * edit mode). Pass the variant it's editing so the right variant opens. */
   setAiBuildingComponentId: (componentId: string | null, variantId?: string | null) => void;
+  /** Reset the "AI opened component edit mode this turn" flag. */
+  setAiOpenedComponentEdit: (value: boolean) => void;
+  /** Request that the builder auto-exit component edit mode back to the page
+   * (consumed by YCodeBuilderMain after an AI-driven component edit finishes). */
+  setPendingAiComponentExit: (value: boolean) => void;
   setActiveInteraction: (triggerId: string | null, targetIds: string[]) => void;
   clearActiveInteraction: () => void;
   openCollectionItemSheet: (collectionId: string, itemId: string) => void;
@@ -171,6 +176,11 @@ interface EditorStoreWithHistory extends EditorState {
    * mode so the user watches the changes happen in the right place. */
   aiBuildingComponentId: string | null;
   aiBuildingComponentVariantId: string | null;
+  /** True when the AI (not the user) opened component edit mode this turn, so the
+   * builder can return the user to their page once the turn finishes. */
+  aiOpenedComponentEdit: boolean;
+  /** Set at turn end to trigger the auto-exit back to the page. */
+  pendingAiComponentExit: boolean;
   activeInteractionTriggerLayerId: string | null;
   activeInteractionTargetLayerIds: string[];
   activeTextStyleKey: string | null; // Currently active text style (e.g., 'bold', 'italic')
@@ -282,6 +292,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   aiBuildingPageId: null,
   aiBuildingComponentId: null,
   aiBuildingComponentVariantId: null,
+  aiOpenedComponentEdit: false,
+  pendingAiComponentExit: false,
   activeInteractionTriggerLayerId: null,
   activeInteractionTargetLayerIds: [],
   activeTextStyleKey: null,
@@ -622,11 +634,23 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     state.aiBuildingPageId === pageId ? state : { aiBuildingPageId: pageId }
   )),
 
-  setAiBuildingComponentId: (componentId, variantId = null) => set((state) => (
-    state.aiBuildingComponentId === componentId && state.aiBuildingComponentVariantId === variantId
-      ? state
-      : { aiBuildingComponentId: componentId, aiBuildingComponentVariantId: variantId }
-  )),
+  setAiBuildingComponentId: (componentId, variantId = null) => set((state) => {
+    if (state.aiBuildingComponentId === componentId && state.aiBuildingComponentVariantId === variantId) {
+      return state;
+    }
+    // Opening a component the user wasn't already editing means the AI initiated
+    // it — remember so we can return the user to their page when the turn ends.
+    const aiOpenedFresh = !!componentId && !state.editingComponentId && !state.aiOpenedComponentEdit;
+    return {
+      aiBuildingComponentId: componentId,
+      aiBuildingComponentVariantId: variantId,
+      ...(aiOpenedFresh ? { aiOpenedComponentEdit: true } : {}),
+    };
+  }),
+
+  setAiOpenedComponentEdit: (value) => set({ aiOpenedComponentEdit: value }),
+
+  setPendingAiComponentExit: (value) => set({ pendingAiComponentExit: value }),
 
   setActiveInteraction: (triggerId, targetIds) => set({
     activeInteractionTriggerLayerId: triggerId,
