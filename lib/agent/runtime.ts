@@ -307,7 +307,9 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
       }
       // Track edited components (mutating tools only) so we can stream an
       // authoritative snapshot back for the client to sync its drafts.
-      if (!isReadOnlyTool(call.name)) {
+      // Instance tools reference a component_id but edit the PAGE, not the
+      // master, so they must not be treated as component edits.
+      if (!isReadOnlyTool(call.name) && !COMPONENT_INSTANCE_TOOLS.has(call.name)) {
         for (const componentId of collectComponentIdsFromInput(call.input)) {
           editedComponentIds.add(componentId);
         }
@@ -698,6 +700,11 @@ function collectPageIdsFromInput(input: unknown): string[] {
   walk(input);
   return [...ids];
 }
+
+/** Tools that place a component instance on a page. They reference a
+ * `component_id` but mutate the page tree, not the component definition, so they
+ * are excluded from component-edit tracking. */
+const COMPONENT_INSTANCE_TOOLS = new Set(['add_component_instance', 'replace_layer_with_component']);
 
 /** Recursively collect every `component_id` referenced by a tool call's input
  * (handles nested `operations` arrays from update_component_layers). */

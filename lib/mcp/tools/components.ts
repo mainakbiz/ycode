@@ -22,6 +22,8 @@ import {
   generateId,
 } from '@/lib/mcp/utils';
 import type { RichTextBlock } from '@/lib/mcp/utils';
+import { buildComponentInstanceLayer } from '@/lib/component-utils';
+import { getCachedLayers as getPageLayers, saveCachedLayers } from '@/lib/mcp/page-layers';
 import {
   broadcastComponentCreated,
   broadcastComponentUpdated,
@@ -94,6 +96,100 @@ export function registerComponentTools(server: McpServer) {
       }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(component) }],
+      };
+    },
+  );
+
+  server.tool(
+    'add_component_instance',
+    `Reuse a component on a PAGE by inserting a real component instance (a layer that
+references the component and shares its structure). Prefer this over rebuilding a
+component's markup by hand.
+
+The instance renders the master component's layer tree; its children are read-only
+(edit the master component to change the structure). Per-instance content overrides
+are not settable here yet, so the instance shows the component's default content.
+
+Use replace_layer_with_component instead when swapping an existing layer for a component.`,
+    {
+      page_id: z.string().describe('The page ID'),
+      parent_layer_id: z.string().describe('ID of the parent layer to insert the instance into'),
+      position: z.number().optional().describe('Index within parent children. Omit to append at end.'),
+      component_id: z.string().describe('ID of the component to instantiate'),
+      variant_id: z.string().optional().describe('Optional variant ID. Omit to use the primary ("Default") variant.'),
+      custom_name: z.string().optional().describe('Custom display name for the instance layer. Defaults to the component name.'),
+    },
+    async ({ page_id, parent_layer_id, position, component_id, variant_id, custom_name }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return { content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }], isError: true };
+      }
+
+      const layers = await getPageLayers(page_id);
+      const parent = findLayerById(layers, parent_layer_id);
+      if (!parent) {
+        return { content: [{ type: 'text' as const, text: `Error: Parent layer "${parent_layer_id}" not found.` }], isError: true };
+      }
+      if (!canHaveChildren(parent)) {
+        return { content: [{ type: 'text' as const, text: `Error: "${parent.customName || parent.name}" cannot have children.` }], isError: true };
+      }
+
+      const instance = buildComponentInstanceLayer(component, { variantId: variant_id, customName: custom_name });
+      const updated = insertLayer(layers, parent_layer_id, instance, position);
+      await saveCachedLayers(page_id, updated);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Added "${component.name}" component instance to page`,
+            layer_id: instance.id,
+            parent_layer_id,
+          }),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'replace_layer_with_component',
+    `Swap an existing PAGE layer for a component instance in place (keeps its position).
+Use this when the user wants to reuse a component "instead of" an existing layer.
+
+The replaced layer becomes a real component instance rendering the master's layer tree;
+its children are read-only (edit the master component to change the structure). Per-instance
+content overrides are not settable here yet, so it shows the component's default content.`,
+    {
+      page_id: z.string().describe('The page ID'),
+      layer_id: z.string().describe('ID of the layer to replace with a component instance'),
+      component_id: z.string().describe('ID of the component to instantiate'),
+      variant_id: z.string().optional().describe('Optional variant ID. Omit to use the primary ("Default") variant.'),
+    },
+    async ({ page_id, layer_id, component_id, variant_id }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return { content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }], isError: true };
+      }
+
+      const layers = await getPageLayers(page_id);
+      const target = findLayerById(layers, layer_id);
+      if (!target) {
+        return { content: [{ type: 'text' as const, text: `Error: Layer "${layer_id}" not found.` }], isError: true };
+      }
+
+      const updated = updateLayerById(layers, layer_id, () =>
+        buildComponentInstanceLayer(component, { variantId: variant_id, id: layer_id }),
+      );
+      await saveCachedLayers(page_id, updated);
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Replaced layer with "${component.name}" component instance`,
+            layer_id,
+          }),
+        }],
       };
     },
   );

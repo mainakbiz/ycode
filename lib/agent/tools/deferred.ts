@@ -31,7 +31,7 @@ const DEFERRED_GROUPS: Exclude<AgentToolGroup, 'core'>[] = [
 
 const GROUP_HINTS: Record<Exclude<AgentToolGroup, 'core'>, string> = {
   cms: 'collections, collection items/fields, collection lists on pages, filtering, field binding, dynamic text',
-  components: 'reusable components, variants, component layer editing',
+  components: 'reusable components, variants, component layer editing, reusing/instancing a component on a page',
   styles: 'shared reusable styles (create/apply/update, combo stacks)',
   animations: 'GSAP animation presets and raw interactions',
   localization: 'locales and translations',

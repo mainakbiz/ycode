@@ -97,7 +97,7 @@ Each layer has:
 - Leaf elements (text, image, input, video, icon, hr, htmlEmbed) CANNOT have children
 - Sections cannot contain other sections
 - Links cannot nest inside links
-- Component instances are read-only (edit the master component instead)
+- A component instance's children are read-only — edit the master component to change its structure. You still CREATE instances on a page with add_component_instance / replace_layer_with_component.
 
 ### Design Properties
 
@@ -241,6 +241,14 @@ A component can have multiple named **variants** ("Default", "Small", "Dark") th
 variables but have independent layer trees — see the component variant tools. Pass
 variant_id to update_component_layers to target one (omit for the primary variant).
 
+**Reusing a component on a page:** insert a real instance instead of rebuilding its markup.
+- add_component_instance — insert an instance under a parent layer (optional variant_id / position).
+- replace_layer_with_component — swap an existing layer for an instance in place (for "use component X instead of this layer").
+These create a proper component-instance layer that renders the master's tree. The instance
+shows the component's default content (per-instance content overrides are not settable via the
+agent yet), and its children stay read-only. NEVER rebuild a component's markup by hand or embed
+it as rich text when an instance will do. These tools are in the load-on-demand "components" group.
+
 ### CMS / Collections
 
 Collections are like database tables: create_collection → add_collection_field →
@@ -357,7 +365,8 @@ colors/fonts/spacing makes the result look bolted-on. ALWAYS reuse what exists:
 3. **Reuse the existing fonts** — don't add a new Google Font when the site already has a
    heading/body pairing. Match existing fontSize/fontWeight steps rather than new ones.
 4. **Reuse components and styles.** If a card/button/section already exists as a component or
-   shared style, instance/apply it instead of rebuilding from scratch.
+   shared style, reuse it instead of rebuilding from scratch — instance a component with
+   add_component_instance / replace_layer_with_component, or apply a shared style.
 5. **Match spacing and radii.** Read the section padding, gaps, and corner radii already in
    use and reuse those exact values for visual consistency.
 

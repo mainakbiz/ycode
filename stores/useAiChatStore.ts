@@ -825,6 +825,19 @@ function collectPageIds(input: unknown): string[] {
   return [...ids];
 }
 
+/** Component-definition editing tools. Only these should auto-open component
+ * edit mode. Read-only lookups (get_component), page-level instantiation
+ * (add_component_instance / replace_layer_with_component), and rich-text
+ * component embeds all reference a `component_id` but must NOT switch the canvas
+ * into component edit mode. */
+const COMPONENT_EDIT_TOOL_NAMES = new Set([
+  'update_component_layers',
+  'update_component',
+  'create_component_variant',
+  'update_component_variant',
+  'delete_component_variant',
+]);
+
 /** Recursively collect every `component_id` referenced by a tool call's input
  * (handles nested `operations` arrays from update_component_layers). */
 function collectComponentIds(input: unknown): string[] {
@@ -980,11 +993,12 @@ function applyEvent(
           syncAiActiveCmsIds();
         }
       }
-      // When the agent touches a component, flag it so the canvas auto-opens
-      // that component's edit mode (mirrors aiBuildingPageId). Opening as soon
-      // as the agent inspects the component keeps the user watching the right
-      // place; the first component wins for the turn.
-      {
+      // When the agent EDITS a component's definition, flag it so the canvas
+      // auto-opens that component's edit mode (mirrors aiBuildingPageId). Only
+      // real component-editing tools count — inspecting (get_component) or
+      // instantiating a component on a page must not yank the user into edit
+      // mode. The first edited component wins for the turn.
+      if (COMPONENT_EDIT_TOOL_NAMES.has(event.name)) {
         const componentIds = collectComponentIds(event.input);
         if (componentIds.length > 0) {
           const editor = useEditorStore.getState();
