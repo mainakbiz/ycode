@@ -25,10 +25,10 @@
  * sanitizeHtmlId('Section:1.2') // 'Section:1.2'
  * sanitizeHtmlId('-123-') // '-123-'
  */
-export function sanitizeHtmlId(value: string): string {
-  if (!value) return '';
+export function sanitizeHtmlId(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
 
-  return value
+  return String(value)
     // Replace spaces with hyphens
     .replace(/\s+/g, '-')
     // Replace invalid characters with hyphens (keep only letters, numbers, hyphens, underscores, colons, periods)
