@@ -460,7 +460,10 @@ export function resolveCollectionLinkValue(
     // Handle dynamic pages with specific collection item
     if (page.is_dynamic && linkValue.page.collection_item_id && collectionItemSlugs) {
       const itemSlug = collectionItemSlugs[linkValue.page.collection_item_id];
-      href = buildLocalizedDynamicPageUrl(page, folders, itemSlug || null, locale, translations || undefined);
+      // Unresolved item slug (empty/missing reference, deleted target) → emit no
+      // link rather than the literal `{slug}` placeholder from the URL pattern.
+      if (!itemSlug) return null;
+      href = buildLocalizedDynamicPageUrl(page, folders, itemSlug, locale, translations || undefined);
     } else {
       // Static page or dynamic page without specific item
       href = buildLocalizedSlugPath(page, folders, 'page', locale, translations || undefined);
@@ -582,7 +585,13 @@ export function generateLinkHref(
                 break;
             }
 
-            href = buildLocalizedDynamicPageUrl(page, folders, itemSlug || null, locale, translations || undefined);
+            // A specific collection item was requested but its slug could not be
+            // resolved (empty/missing reference, deleted target, or out-of-bounds
+            // next/previous). Emit no href instead of the literal `{slug}` pattern
+            // so the element renders without a broken link.
+            href = itemSlug
+              ? buildLocalizedDynamicPageUrl(page, folders, itemSlug, locale, translations || undefined)
+              : '';
           } else {
             // Static page or dynamic page without specific item
             href = buildLocalizedSlugPath(page, folders, 'page', locale, translations || undefined);
