@@ -2412,10 +2412,17 @@ function tagLayerSubtreeWithComponentId(layer: Layer, componentId: string): Laye
  */
 function transformLayersForInstance(
   layers: Layer[],
-  instanceLayerId: string
+  instanceLayerId: string,
+  rootMasterId?: string,
 ): Layer[] {
   // Build ID map: original ID -> instance-specific ID
   const idMap = new Map<string, string>();
+
+  // The component root renders with the instance ID, so map its master ID
+  // to the instance ID for child tweens/interactions that target the root.
+  if (rootMasterId && rootMasterId !== instanceLayerId) {
+    idMap.set(rootMasterId, instanceLayerId);
+  }
 
   // First pass: collect all layer IDs and generate new ones
   const collectIds = (layerList: Layer[]) => {
@@ -2509,7 +2516,7 @@ function resolveComponentsInLayers(
         // Transform all component children with instance-specific IDs
         // This ensures unique layer IDs when multiple instances of the same component exist
         const transformedChildren = componentContent.children
-          ? transformLayersForInstance(componentContent.children, layer.id)
+          ? transformLayersForInstance(componentContent.children, layer.id, componentContent.id)
           : [];
 
         // Recursively resolve any nested components within the transformed children

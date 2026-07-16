@@ -210,11 +210,23 @@ function remapVariableCollectionLayerIds(vars: LayerVariables, idMap: Map<string
  * This enables animations to target the correct elements when multiple instances exist.
  * @param layers - Layers to transform
  * @param instanceLayerId - The component instance's layer ID used as namespace
+ * @param rootMasterId - The component root's master ID, mapped to the instance ID so
+ *   child interactions targeting the root (which renders as the instance) resolve correctly
  * @returns Transformed layers with remapped IDs and interaction references
  */
-export function transformLayerIdsForInstance(layers: Layer[], instanceLayerId: string): Layer[] {
+export function transformLayerIdsForInstance(
+  layers: Layer[],
+  instanceLayerId: string,
+  rootMasterId?: string,
+): Layer[] {
   // Build ID map: original ID -> instance-specific ID
   const idMap = new Map<string, string>();
+
+  // The component root renders with the instance ID, so map its master ID
+  // to the instance ID for child tweens/interactions that target the root.
+  if (rootMasterId && rootMasterId !== instanceLayerId) {
+    idMap.set(rootMasterId, instanceLayerId);
+  }
 
   // First pass: collect all layer IDs and generate new ones
   const collectIds = (layerList: Layer[]) => {
@@ -656,7 +668,7 @@ export function resolveComponents(
         // Transform layer IDs to be instance-specific
         // This ensures each component instance has unique IDs for proper animation targeting
         const resolvedChildren = taggedChildren.length
-          ? transformLayerIdsForInstance(taggedChildren, layer.id)
+          ? transformLayerIdsForInstance(taggedChildren, layer.id, componentContent.id)
           : [];
 
         // Remap root layer interactions to reference transformed child IDs
