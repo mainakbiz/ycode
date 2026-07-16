@@ -36600,7 +36600,7 @@ export const layoutTemplates: Record<string, LayoutTemplate> = {
                                           'content': [
                                             {
                                               'type': 'text',
-                                              'text': 'info@ycode.com'
+                                              'text': 'hello@example.com'
                                             }
                                           ]
                                         }
