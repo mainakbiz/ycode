@@ -785,6 +785,28 @@ function renderRichTextComponentBlock(
   }
 
   const component = components?.find(c => c.id === componentId);
+
+  // Build updated ancestor set including the current component
+  const updatedAncestors = new Set(ancestorComponentIds);
+  updatedAncestors.add(componentId);
+
+  // Published/SSR path: layers are pre-resolved server-side by
+  // resolveRichTextCollections (nested components and collections at any depth),
+  // so the full `components` library is not needed on the client — only the
+  // resolved layers. This lets published pages serialize an empty `components`
+  // array, keeping the RSC payload small without curating which definitions survive.
+  if (block.attrs._resolvedLayers) {
+    // Component metadata is unused when rendering pre-resolved layers; fall back
+    // to a lightweight stub so an empty `components` array still renders.
+    const resolvedComponent = component ?? ({ id: componentId, name: '' } as Component);
+    if (!renderComponentBlock) {
+      return React.createElement('span', { key, 'data-component-id': componentId }, `[${resolvedComponent.name}]`);
+    }
+    return renderComponentBlock(resolvedComponent, block.attrs._resolvedLayers, overrides, key, updatedAncestors);
+  }
+
+  // Fallback (edit mode): resolve from the component definition, which requires
+  // the full component metadata and library to be present.
   if (!component) {
     return React.createElement('span', { key, className: 'text-xs text-muted-foreground' }, '[missing component]');
   }
@@ -793,16 +815,6 @@ function renderRichTextComponentBlock(
     return React.createElement('span', { key, 'data-component-id': componentId }, `[${component.name}]`);
   }
 
-  // Build updated ancestor set including the current component
-  const updatedAncestors = new Set(ancestorComponentIds);
-  updatedAncestors.add(componentId);
-
-  // Use pre-resolved layers (from server-side resolveRichTextCollections) when available
-  if (block.attrs._resolvedLayers) {
-    return renderComponentBlock(component, block.attrs._resolvedLayers, overrides, key, updatedAncestors);
-  }
-
-  // Fallback: resolve from component definition (edit mode)
   if (!component.layers?.length) {
     return React.createElement('span', { key, className: 'text-xs text-muted-foreground' }, '[missing component]');
   }
