@@ -882,7 +882,11 @@ export default async function PageRenderer({
           isPreview={isPreview}
           translations={translations}
           resolvedAssets={resolvedAssets}
-          components={components}
+          // Rich-text embedded components are already pre-resolved into the layer
+          // tree (_resolvedLayers), so the client renderer never needs the full
+          // component library. Passing [] avoids serializing every component
+          // definition into the RSC payload (see issue #447).
+          components={[]}
           serverSettings={serverSettings}
           globalsData={Object.keys(globalsData).length > 0 ? globalsData : undefined}
           globalsMeta={Object.keys(globalsMeta).length > 0 ? globalsMeta : undefined}
