@@ -106,7 +106,7 @@ function LayerContextMenuInner({
   onLayerSelect,
   liveLayerUpdates,
   liveComponentUpdates,
-  editingComponentId = null,
+  editingComponentId: editingComponentIdProp = null,
   isComponentDialogOpen,
   setIsComponentDialogOpen,
   isLayoutDialogOpen,
@@ -138,6 +138,12 @@ function LayerContextMenuInner({
   const components = useComponentsStore((state) => state.components);
   const componentDrafts = useComponentsStore((state) => state.componentDrafts);
   const editingComponentVariantId = useEditorStore((state) => state.editingComponentVariantId);
+  // Prefer the prop (passed by the layers tree) but fall back to the editor
+  // store so the canvas context menu also knows when a component is being
+  // edited — otherwise "Create component" on the canvas resolves against the
+  // page draft and silently fails for layers inside a component.
+  const storeEditingComponentId = useEditorStore((state) => state.editingComponentId);
+  const editingComponentId = editingComponentIdProp ?? storeEditingComponentId;
   // Resolve the active variant id for the component being edited. When
   // unspecified (or pointing at a missing variant) we fall back to the first
   // variant so the editor never shows an empty tree.

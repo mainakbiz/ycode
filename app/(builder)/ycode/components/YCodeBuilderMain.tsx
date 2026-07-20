@@ -1999,9 +1999,9 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
           }
         }
 
-        // Create Component: Option + Cmd + K
+        // Create Component: Option + Cmd + K (works on pages and inside a component)
         if (e.altKey && e.metaKey && e.code === 'KeyK' && !isContentOnlyRole) {
-          if (!isInputFocused && currentPageId && selectedLayerId && !editingComponentId) {
+          if (!isInputFocused && currentPageId && selectedLayerId) {
             e.preventDefault();
             const layers = getCurrentLayers();
             const layer = findLayerById(layers, selectedLayerId);
@@ -2351,11 +2351,19 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
             if (!open) closeCreateComponentDialog();
           }}
           onConfirm={async (componentName: string) => {
-            const componentId = await createComponentFromLayer(
-              currentPageId,
-              createComponentDialog.layerId!,
-              componentName
-            );
+            // When editing a component master, extract into a nested component
+            // via the components store; otherwise create from the page draft.
+            const componentId = editingComponentId
+              ? await useComponentsStore.getState().createComponentFromLayer(
+                editingComponentId,
+                createComponentDialog.layerId!,
+                componentName
+              )
+              : await createComponentFromLayer(
+                currentPageId,
+                createComponentDialog.layerId!,
+                componentName
+              );
             if (componentId && liveComponentUpdates) {
               const { getComponentById } = useComponentsStore.getState();
               const component = getComponentById(componentId);
