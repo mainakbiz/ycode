@@ -70,6 +70,16 @@
   stroke: currentColor;
 }
 
+/* Swiper needs a definite container width. When a slider ends up shrink-to-fit
+   (e.g. it lost its `w-full` at a breakpoint and sits in an `align-items:center`
+   flex parent), its `width:100%` slides create a circular layout that blows the
+   width up to the browser max — Swiper then measures that and sizes every slide
+   to it, leaving the slider effectively invisible. Capping to the container
+   width breaks the cycle without forcing a width, so explicit widths still win. */
+[data-slider-id] {
+  max-width: 100%;
+}
+
 /* Pre-init slider layout: size slides by the configured per-view before Swiper
    JS initializes, preventing a flash where every slide is full-width (1 per
    view) on load. Swiper sets exact inline widths on init which override these.

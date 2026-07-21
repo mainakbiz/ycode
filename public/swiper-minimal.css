@@ -13,6 +13,18 @@
 .swiper-slide-invisible-blank { visibility: hidden; }
 
 /*
+ * Slides default to Tailwind `w-full` (width:100%). When the slider has no
+ * definite width (e.g. it lost `w-full` at a breakpoint and sits in an
+ * `align-items:center` flex parent, making it shrink-to-fit), the percentage-
+ * width chain becomes circular and the slider blows up to the browser max
+ * width — Swiper then measures that and sizes every slide to it, leaving the
+ * slider effectively invisible. Capping to the container width breaks the cycle
+ * without forcing a width, so explicit widths still win. Mirrors the height fix
+ * below and applies in both the canvas and published output.
+ */
+.swiper { max-width: 100%; }
+
+/*
  * Slides default to Tailwind `h-full` (height:100%). When the slider itself has
  * no definite height (e.g. `h-[100%]` on tablet/mobile), the percentage-height
  * chain becomes circular and slides collapse to 0 — the first slide appears
