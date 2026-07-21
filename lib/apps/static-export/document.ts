@@ -179,12 +179,31 @@ const SLIDER_BOOT_SCRIPT = `
     requestAnimationFrame(syncAll);
   }
 
+  // Resolve a responsive number (number or per-breakpoint object) using the
+  // desktop-first fallback chain, mirroring lib/slider-utils.ts.
+  var BP_FALLBACKS = { desktop: ['desktop'], tablet: ['tablet', 'desktop'], mobile: ['mobile', 'tablet', 'desktop'] };
+  function resolveResp(value, bp, fallback) {
+    if (value == null) return fallback;
+    if (typeof value === 'number') return value;
+    var chain = BP_FALLBACKS[bp];
+    for (var i = 0; i < chain.length; i++) {
+      if (typeof value[chain[i]] === 'number') return value[chain[i]];
+    }
+    return fallback;
+  }
+
   function buildConfig(s) {
+    var perView = function (bp) { return resolveResp(s.groupSlide, bp, 1); };
+    var perGroup = function (bp) { return Math.min(resolveResp(s.slidesPerGroup, bp, 1), perView(bp)); };
     var config = {
-      slidesPerView: 'auto',
-      slidesPerGroup: s.slidesPerGroup || 1,
+      slidesPerView: perView('mobile'),
+      slidesPerGroup: perGroup('mobile'),
       centeredSlides: !!s.centered,
       speed: Math.round((parseFloat(s.duration) || 0.5) * 1000),
+      breakpoints: {
+        768: { slidesPerView: perView('tablet'), slidesPerGroup: perGroup('tablet') },
+        1024: { slidesPerView: perView('desktop'), slidesPerGroup: perGroup('desktop') },
+      },
     };
     if (SPECIAL_EFFECTS[s.animationEffect]) config.effect = s.animationEffect;
     if (s.loop === 'loop') config.loop = true;

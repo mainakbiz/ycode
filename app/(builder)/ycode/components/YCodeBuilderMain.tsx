@@ -205,6 +205,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const lastLayersByPageRef = useRef<Map<string, Layer[]>>(new Map());
   const previousPageIdRef = useRef<string | null>(null);
   const previousResourceIdRef = useRef<string | null>(null); // Track URL resourceId changes
+  const previousComponentResourceIdRef = useRef<string | null>(null); // Track URL component id changes
   const hasInitializedLayerFromUrlRef = useRef(false);
   const previousIsEditingRef = useRef<boolean | undefined>(undefined);
 
@@ -847,6 +848,12 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     if (isComponentRoute && components.length === 0) return;
     if (isCollectionRoute && collections.length === 0 && !builderDataPreloaded) return;
 
+    // Reset the component-id tracker when leaving component routes so
+    // re-entering the same component later is still detected as a change.
+    if (!isComponentRoute) {
+      previousComponentResourceIdRef.current = null;
+    }
+
     // Handle route types: layers, page, collection, collections-base, component
     if ((routeType === 'layers' || routeType === 'page') && resourceId) {
       const page = pages.find(p => p.id === resourceId);
@@ -908,9 +915,16 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
 
     if (routeType === 'component' && resourceId && !isExitingComponentModeRef.current) {
+      // Only sync state from the URL when the URL's component id actually
+      // changed. Otherwise this effect re-runs when editingComponentId is set
+      // programmatically (e.g. entering a nested component) before the URL
+      // updates, and reverts it back to the stale parent component id.
+      const componentResourceChanged = resourceId !== previousComponentResourceIdRef.current;
+      previousComponentResourceIdRef.current = resourceId;
+
       const { getComponentById, loadComponentDraft } = useComponentsStore.getState();
       const component = getComponentById(resourceId);
-      if (component && editingComponentId !== resourceId) {
+      if (component && editingComponentId !== resourceId && componentResourceChanged) {
         const { setEditingComponentId, setEditingComponentVariantId } = useEditorStore.getState();
         // Use currentPageId if available, otherwise find homepage as fallback
         const returnPageId = currentPageId || (pages.length > 0 ? (findHomepage(pages)?.id || pages[0]?.id) : null);

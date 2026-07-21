@@ -14,6 +14,7 @@ import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextEd
 import { getMapIframeProps, DEFAULT_MAP_SETTINGS, resolveMarkerColor } from '@/lib/map-utils';
 import { HTML_TO_REACT_ATTRS } from '@/lib/parse-head-html';
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/slider-constants';
+import { resolveResponsiveNumber } from '@/lib/slider-utils';
 import { useCanvasSlider } from '@/hooks/use-canvas-slider';
 import { resolveFieldFromSources } from '@/lib/cms-variables-utils';
 import { getDynamicTextContent, getImageUrlFromVariable, getVideoUrlFromVariable, getIframeUrlFromVariable, isFieldVariable, isAssetVariable, isStaticTextVariable, isDynamicTextVariable, getAssetId, getStaticTextContent, createAssetVariable, createDynamicTextVariable, resolveDesignStyles } from '@/lib/variable-utils';
@@ -2245,6 +2246,17 @@ const LayerItemImpl: React.FC<{
       if (layer.name === 'slider' && layer.settings?.slider) {
         elementProps['data-slider-id'] = layer.id;
         elementProps['data-slider-settings'] = JSON.stringify(layer.settings.slider);
+        // Expose per-view per breakpoint as CSS vars so slides are sized before
+        // Swiper JS runs (prevents a 1-slide flash on load). site.css consumes
+        // these; Swiper overrides with exact inline widths on init.
+        const spv = layer.settings.slider.groupSlide;
+        const existingStyle = (typeof elementProps.style === 'object' && elementProps.style) || {};
+        elementProps.style = {
+          ...existingStyle,
+          '--ycode-spv-mobile': resolveResponsiveNumber(spv, 'mobile', 1),
+          '--ycode-spv-tablet': resolveResponsiveNumber(spv, 'tablet', 1),
+          '--ycode-spv-desktop': resolveResponsiveNumber(spv, 'desktop', 1),
+        };
       }
       if (SWIPER_DATA_ATTR_MAP[layer.name]) {
         elementProps[SWIPER_DATA_ATTR_MAP[layer.name]] = '';

@@ -13,7 +13,7 @@ import Swiper from 'swiper';
 import type { Layer, SliderSettings } from '@/types';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { DEFAULT_SLIDER_SETTINGS } from '@/lib/slider-constants';
-import { buildCanvasSwiperOptions, applySwiperEasing } from '@/lib/slider-utils';
+import { buildCanvasSwiperOptions, applySwiperEasing, maxResponsiveNumber, preserveSlideCssVars } from '@/lib/slider-utils';
 
 /**
  * Count the real (non-duplicate) swiper-slide DOM children inside the
@@ -106,10 +106,18 @@ export function useCanvasSlider(
 
   const isSlider = isEditMode && layer.name === 'slider';
 
+  // The canvas resolves per-view/per-group for the builder's active breakpoint
+  // (Swiper's window-based breakpoints can't be used from the builder frame).
+  const activeBreakpoint = useEditorStore((state) => state.activeBreakpoint);
+
   const settings: SliderSettings = { ...DEFAULT_SLIDER_SETTINGS, ...layer.settings?.slider };
+  // groupSlide / slidesPerGroup can be per-breakpoint objects, so serialize them
+  // to detect changes to any breakpoint's value.
+  const groupSlideKey = JSON.stringify(settings.groupSlide);
+  const slidesPerGroupKey = JSON.stringify(settings.slidesPerGroup);
   const settingsKey = useMemo(
-    () => `${settings.animationEffect}-${settings.duration}-${settings.easing}-${settings.groupSlide}-${settings.slidesPerGroup}-${settings.centered}-${settings.paginationType}-${settings.navigation}-${settings.loop}`,
-    [settings.animationEffect, settings.duration, settings.easing, settings.groupSlide, settings.slidesPerGroup, settings.centered, settings.paginationType, settings.navigation, settings.loop],
+    () => `${settings.animationEffect}-${settings.duration}-${settings.easing}-${groupSlideKey}-${slidesPerGroupKey}-${settings.centered}-${settings.paginationType}-${settings.navigation}-${settings.loop}-${activeBreakpoint}`,
+    [settings.animationEffect, settings.duration, settings.easing, groupSlideKey, slidesPerGroupKey, settings.centered, settings.paginationType, settings.navigation, settings.loop, activeBreakpoint],
   );
 
   const settingsRef = useRef(settings);
@@ -153,7 +161,7 @@ export function useCanvasSlider(
   // Loop requires at least `slidesPerView + slidesPerGroup` slides; with
   // slidesPerView='auto' the safest conservative threshold is 2.
   const needsLoop = settings.loop === 'loop';
-  const minSlidesForLoop = Math.max(2, (settings.slidesPerGroup || 1) + 1);
+  const minSlidesForLoop = Math.max(2, maxResponsiveNumber(settings.slidesPerGroup, 1) + 1);
   const initBucket = slideCount === 0
     ? 'empty'
     : needsLoop && slideCount < minSlidesForLoop
@@ -177,7 +185,7 @@ export function useCanvasSlider(
     ghostEl.style.cssText = 'position:absolute!important;color:transparent!important;z-index:-1!important;pointer-events:none!important';
     el.appendChild(ghostEl);
 
-    const options = buildCanvasSwiperOptions(settingsRef.current, ghostEl);
+    const options = buildCanvasSwiperOptions(settingsRef.current, ghostEl, activeBreakpoint);
     const swiper = new Swiper(el, options);
     applySwiperEasing(el, settingsRef.current.easing);
 
@@ -309,12 +317,16 @@ export function useCanvasSlider(
     return () => {
       wrapperObserver?.disconnect();
       swiperRegistry.delete(layer.id);
+      // Swiper.destroy wipes each slide's style attribute, stripping
+      // React-applied CSS vars (e.g. --bg-img). Restore them after destroy.
+      const restoreSlideVars = preserveSlideCssVars(el);
       swiper.destroy(true, true);
+      restoreSlideVars();
       ghostEl.remove();
       swiperRef.current = null;
       setSliderAnimating(false);
     };
-  }, [isSlider, elementRef, settingsKey, layer.id, initBucket]);
+  }, [isSlider, elementRef, settingsKey, layer.id, initBucket, activeBreakpoint]);
 
   // Navigate to the slide containing the selected layer
   useEffect(() => {

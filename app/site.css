@@ -70,6 +70,52 @@
   stroke: currentColor;
 }
 
+/* Pre-init slider layout: size slides by the configured per-view before Swiper
+   JS initializes, preventing a flash where every slide is full-width (1 per
+   view) on load. Swiper sets exact inline widths on init which override these.
+   Values are resolved per breakpoint (desktop-first) into CSS vars on the
+   slider root by LayerRenderer. */
+[data-slider-id] > .swiper-wrapper > .swiper-slide {
+  flex-shrink: 0;
+  width: calc(100% / var(--ycode-spv-mobile, 1));
+}
+
+@media (min-width: 768px) {
+  [data-slider-id] > .swiper-wrapper > .swiper-slide {
+    width: calc(100% / var(--ycode-spv-tablet, var(--ycode-spv-mobile, 1)));
+  }
+}
+
+@media (min-width: 1024px) {
+  [data-slider-id] > .swiper-wrapper > .swiper-slide {
+    width: calc(100% / var(--ycode-spv-desktop, var(--ycode-spv-tablet, var(--ycode-spv-mobile, 1))));
+  }
+}
+
+/* Hide slider nav buttons and pagination until Swiper initializes so they don't
+   flash in a pre-init state (enabled buttons that become locked/disabled, or a
+   single bullet template that expands to N bullets). SliderInitializer sets
+   data-slider-initialized on the root after mounting. Slides are pre-sized above
+   so they render correctly without waiting; only these controls are deferred.
+   visibility (not display) keeps layout stable — no shift when they appear. */
+[data-slider-id]:not([data-slider-initialized]) [data-slider-prev],
+[data-slider-id]:not([data-slider-initialized]) [data-slider-next],
+[data-slider-id]:not([data-slider-initialized]) [data-slider-pagination] {
+  visibility: hidden;
+}
+
+/* Hide locked nav buttons and pagination synchronously. Swiper adds
+   `swiper-button-lock` / `swiper-pagination-lock` during init when there's only
+   one page (all slides fit), but the rules that hide them live in
+   swiper-minimal.css which is injected by JS afterwards — that async gap let a
+   locked control blink into view once the initialized gate above released.
+   Duplicating the rules here (loaded at first paint) closes that gap and hides
+   the pagination when there's nothing to paginate. */
+[data-slider-id] .swiper-button-lock,
+[data-slider-id] .swiper-pagination-lock {
+  display: none !important;
+}
+
 /* Custom dropdown chevron for native <select> elements on published pages.
    The native arrow is removed by the inline `ycode-form-reset` styles in
    PageRenderer.tsx; this rule restores a consistent chevron. */

@@ -219,10 +219,17 @@ export interface LightboxSettings {
   duration: string; // Transition duration in seconds
 }
 
+/**
+ * A value that can either be a single number (applies to every breakpoint) or
+ * an object of per-breakpoint overrides. Desktop is the base; tablet/mobile
+ * fall back to larger breakpoints when unset (desktop-first).
+ */
+export type ResponsiveNumber = number | Partial<Record<Breakpoint, number>>;
+
 export interface SliderSettings {
   navigation: boolean;
-  groupSlide: number;
-  slidesPerGroup: number;
+  groupSlide: ResponsiveNumber; // Slides visible per view (responsive)
+  slidesPerGroup: ResponsiveNumber; // Slides advanced per navigation step (responsive)
   loop: SliderLoopMode;
   centered: boolean;
   touchEvents: boolean;
