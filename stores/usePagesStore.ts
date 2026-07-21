@@ -2963,8 +2963,11 @@ export const usePagesStore = create<PagesStore>((set, get) => ({
     const layerToCopy = copyLayer(pageId, layerId);
     if (!layerToCopy) return null;
 
+    // Regenerate IDs so the component's internal layers don't collide with the
+    // instance layer that keeps the original id in the page tree.
+    const regeneratedLayer = regenerateIdsWithInteractionRemapping(layerToCopy);
     // Strip CMS bindings that won't be valid inside a standalone component
-    const cleanedLayers = cleanLayersForComponentCreation([layerToCopy]);
+    const cleanedLayers = cleanLayersForComponentCreation([regeneratedLayer]);
     const newComponent = await createComponentViaApi(componentName, cleanedLayers);
     if (!newComponent) return null;
 

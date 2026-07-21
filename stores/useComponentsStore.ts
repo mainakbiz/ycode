@@ -855,8 +855,11 @@ export const useComponentsStore = create<ComponentsStore>((set, get) => {
       const layerToCopy = findLayerById(layers, layerId);
       if (!layerToCopy) return null;
 
+      // Regenerate IDs so the component's internal layers don't collide with
+      // the instance layer that keeps the original id in the parent tree.
+      const regeneratedLayer = regenerateIdsWithInteractionRemapping(layerToCopy);
       // Strip CMS bindings that won't be valid inside a standalone component
-      const cleanedLayers = cleanLayersForComponentCreation([layerToCopy]);
+      const cleanedLayers = cleanLayersForComponentCreation([regeneratedLayer]);
       const newComponent = await createComponentViaApi(componentName, cleanedLayers);
       if (!newComponent) return null;
 
