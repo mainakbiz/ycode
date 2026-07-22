@@ -10,6 +10,7 @@
  */
 
 import React from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot, Root } from 'react-dom/client';
 import { toBlob } from 'html-to-image';
 
@@ -19,6 +20,7 @@ import { componentsApi } from '@/lib/api';
 import { serializeLayers } from '@/lib/layer-utils';
 import { DEFAULT_ASSETS } from '@/lib/asset-constants';
 import { useColorVariablesStore } from '@/stores/useColorVariablesStore';
+import { useFontsStore } from '@/stores/useFontsStore';
 import type { Layer, Component } from '@/types';
 
 /** Default placeholder image for failed CORS fetches (base64 data URI) */
@@ -33,13 +35,32 @@ const TAILWIND_INIT_DELAY = 1500;
 /** Track in-progress generations to prevent duplicates */
 const pendingGenerations = new Set<string>();
 
+/** Await a few animation frames inside the iframe so layout settles after a
+ * render without a fixed timeout. Falls back to setTimeout if rAF is missing. */
+async function waitForFrames(win: Window | null, count = 2): Promise<void> {
+  const raf =
+    win && typeof win.requestAnimationFrame === 'function'
+      ? win.requestAnimationFrame.bind(win)
+      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(0), 16);
+  for (let i = 0; i < count; i += 1) {
+    await new Promise<void>((resolve) => raf(() => resolve()));
+  }
+}
+
 /**
  * Render layers in a hidden iframe and capture as an image blob.
  * Creates and destroys the iframe automatically.
+ *
+ * When `precompiledCss` is provided (the server-compiled Tailwind stylesheet for
+ * the page), it is injected directly and the fixed Tailwind CDN JIT waits are
+ * skipped — the styles are already resolved, so we only wait for layout to
+ * settle. This removes ~1.7s of fixed delay from the AI self-review screenshot
+ * and makes it match what the canvas/published page actually renders.
  */
 async function captureLayersAsBlob(
   layers: Layer[],
-  components: Component[]
+  components: Component[],
+  precompiledCss?: string
 ): Promise<Blob | null> {
   // Resolve component instances
   const { layers: resolvedLayers } = serializeLayers(layers, components);
@@ -76,38 +97,81 @@ async function captureLayersAsBlob(
       doc.head.appendChild(colorStyle);
     }
 
-    // Wait for Tailwind CDN to initialize
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Inject font CSS (Google @import + custom @font-face + font class mappings)
+    // as a same-origin <style> so custom fonts render instead of the serif
+    // fallback — without this the capture (and the AI visual self-review) sees
+    // wrong fonts. We deliberately avoid injectFontsCss()'s cross-origin Google
+    // Font <link> elements: html-to-image can't read their cssRules and throws
+    // "Cannot access rules". A same-origin <style> with @import is readable, and
+    // html-to-image fetches + inlines the imported fonts itself.
+    const fontsCss = useFontsStore.getState().fontsCss;
+    if (fontsCss) {
+      // The canvas template ships an empty <style id="ycode-fonts-style"> — fill
+      // it (or create it) rather than duplicating the id.
+      let fontStyle = doc.getElementById('ycode-fonts-style') as HTMLStyleElement | null;
+      if (!fontStyle) {
+        fontStyle = doc.createElement('style');
+        fontStyle.id = 'ycode-fonts-style';
+        doc.head.appendChild(fontStyle);
+      }
+      fontStyle.textContent = fontsCss;
+    }
+
+    // When the server-compiled stylesheet is available, inject it as the
+    // authoritative styles so we don't depend on (or wait for) the in-iframe
+    // Tailwind CDN JIT to process classes.
+    if (precompiledCss) {
+      const compiledStyle = doc.createElement('style');
+      compiledStyle.id = 'ycode-compiled-css';
+      compiledStyle.textContent = precompiledCss;
+      doc.head.appendChild(compiledStyle);
+    } else {
+      // Wait for Tailwind CDN to initialize
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
 
     const mountPoint = doc.getElementById('thumbnail-mount');
     if (!mountPoint) throw new Error('Mount point not found');
 
-    // Render layers into the iframe
+    // Render layers into the iframe. createRoot().render() is asynchronous
+    // (concurrent React), and the offscreen iframe's rAF timing is unreliable,
+    // so waiting frames alone can race the commit and "#component-preview"
+    // may not exist yet when queried below. flushSync forces the commit to
+    // complete before we continue.
     root = createRoot(mountPoint);
-    root.render(
-      <div
-        id="component-preview"
-        style={{
-          background: 'white',
-          minHeight: '400px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <LayerRenderer
-            layers={resolvedLayers}
-            isEditMode={false}
-            isPublished={false}
-            pageId="thumbnail"
-          />
+    const reactRoot = root;
+    flushSync(() => {
+      reactRoot.render(
+        <div
+          id="component-preview"
+          style={{
+            background: 'white',
+            minHeight: '400px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <LayerRenderer
+              layers={resolvedLayers}
+              isEditMode={false}
+              isPublished={false}
+              pageId="thumbnail"
+            />
+          </div>
         </div>
-      </div>
-    );
+      );
+    });
 
-    // Wait for React to render + Tailwind to process all classes
-    await new Promise((resolve) => setTimeout(resolve, TAILWIND_INIT_DELAY));
+    // Wait for styles to apply and layout to settle. With precompiled CSS the
+    // styles resolve synchronously, so a couple of frames is enough; otherwise
+    // give the Tailwind CDN JIT time to process classes.
+    if (precompiledCss) {
+      await waitForFrames(iframe.contentWindow, 2);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, TAILWIND_INIT_DELAY));
+    }
 
     // Force eager loading — the offscreen iframe won't trigger lazy images
     doc.querySelectorAll('img[loading="lazy"]').forEach((img) => {
@@ -132,6 +196,17 @@ async function captureLayersAsBlob(
         )),
         new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
+    }
+
+    // Wait for the injected web fonts to finish loading so the captured image
+    // uses the real typefaces (otherwise text renders with the serif fallback).
+    try {
+      await Promise.race([
+        doc.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    } catch {
+      // Ignore — fall back to whatever is loaded so capture never hangs.
     }
 
     // Capture the rendered content
@@ -161,6 +236,42 @@ async function captureLayersAsBlob(
       }
     }
     document.body.removeChild(iframe);
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Failed to read blob'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Render layers offscreen and return them as a base64 image (no upload).
+ * Used by the AI visual self-review loop to let the agent "see" its work.
+ *
+ * @param precompiledCss - Optional server-compiled Tailwind stylesheet for the
+ *   page. When provided, the fixed Tailwind CDN JIT wait is skipped, making the
+ *   capture ~1.7s faster and matching the canvas/published rendering.
+ * @returns Image data (base64 + media type + full data URL), or null on failure
+ */
+export async function captureLayersImage(
+  layers: Layer[],
+  components: Component[] = [],
+  precompiledCss?: string,
+): Promise<{ data: string; mediaType: string; dataUrl: string } | null> {
+  try {
+    const blob = await captureLayersAsBlob(layers, components, precompiledCss);
+    if (!blob) return null;
+    const dataUrl = await blobToDataUrl(blob);
+    const comma = dataUrl.indexOf(',');
+    if (comma === -1) return null;
+    return { data: dataUrl.slice(comma + 1), mediaType: blob.type || 'image/png', dataUrl };
+  } catch (error) {
+    console.error('Error capturing layers image:', error);
+    return null;
   }
 }
 

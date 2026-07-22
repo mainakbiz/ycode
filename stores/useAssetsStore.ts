@@ -309,9 +309,14 @@ export const useAssetsStore = create<AssetsStore>((set, get) => ({
    * Add folder to store
    */
   addFolder: (folder: AssetFolder) => {
-    set((state) => ({
-      folders: [...state.folders, folder],
-    }));
+    set((state) => {
+      // Idempotent: skip if a folder with this id already exists so the list can
+      // never hold a duplicate id (which crashes keyed tree/list renders). Guards
+      // against double-invokes (React StrictMode, rapid retries) and any future
+      // realtime create path that could deliver the same folder more than once.
+      if (state.folders.some((existing) => existing.id === folder.id)) return state;
+      return { folders: [...state.folders, folder] };
+    });
   },
 
   /**

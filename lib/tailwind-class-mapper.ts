@@ -314,6 +314,7 @@ const CLASS_PROPERTY_MAP: Record<string, RegExp> = {
   letterSpacing: /^tracking-(tighter|tight|normal|wide|wider|widest|\[.+\]|.+)$/,
   textAlign: /^text-(left|center|right|justify|start|end)$/,
   textWrap: /^text-(wrap|nowrap|balance|pretty)$/,
+  fontVariantNumeric: /^(normal-nums|ordinal|slashed-zero|lining-nums|oldstyle-nums|proportional-nums|tabular-nums|diagonal-fractions|stacked-fractions)$/,
   textTransform: /^(uppercase|lowercase|capitalize|normal-case)$/,
   textDecoration: /^(underline|overline|line-through|no-underline)$/,
   textDecorationColor: /^decoration-\[.+\](\/\d+)?$/,
@@ -791,6 +792,10 @@ export function propertyToClass(
         return `tracking-${value}`;
       case 'textAlign':
         return `text-${value}`;
+      case 'textWrap':
+        return `text-${value}`;
+      case 'fontVariantNumeric':
+        return value === 'normal' ? 'normal-nums' : value;
       case 'textTransform':
         if (value === 'none') return 'normal-case';
         return value; // uppercase, lowercase, capitalize
@@ -1544,6 +1549,17 @@ export function classesToDesign(classes: string | string[]): Layer['design'] {
     if (cls === 'text-center') design.typography!.textAlign = 'center';
     if (cls === 'text-right') design.typography!.textAlign = 'right';
     if (cls === 'text-justify') design.typography!.textAlign = 'justify';
+
+    // Text Wrap
+    if (cls === 'text-wrap') design.typography!.textWrap = 'wrap';
+    if (cls === 'text-nowrap') design.typography!.textWrap = 'nowrap';
+    if (cls === 'text-balance') design.typography!.textWrap = 'balance';
+    if (cls === 'text-pretty') design.typography!.textWrap = 'pretty';
+
+    // Font Variant Numeric
+    if (CLASS_PROPERTY_MAP.fontVariantNumeric.test(cls)) {
+      design.typography!.fontVariantNumeric = cls === 'normal-nums' ? 'normal' : cls;
+    }
 
     // Text Transform
     if (cls === 'uppercase') design.typography!.textTransform = 'uppercase';

@@ -23,6 +23,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import { useCollectionsStore } from '@/stores/useCollectionsStore';
 import { useAssetsStore } from '@/stores/useAssetsStore';
+import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
 import { useCollectionLayerStore } from '@/stores/useCollectionLayerStore';
 import { useCollaborationPresenceStore, getResourceLockKey } from '@/stores/useCollaborationPresenceStore';
@@ -112,6 +113,7 @@ interface ItemLockInfo {
 interface SortableRowProps {
   item: CollectionItemWithValues;
   isSaving?: boolean;
+  isAiActive?: boolean;
   isManualMode?: boolean;
   isCollectionPublished: boolean;
   children: React.ReactNode;
@@ -125,7 +127,7 @@ interface SortableRowProps {
   lockInfo?: ItemLockInfo;
 }
 
-function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, children, statusValue, onEdit, onSetAsDraft, onStageForPublish, onSetAsPublished, onDuplicate, onDelete, lockInfo }: SortableRowProps) {
+function SortableRow({ item, isSaving, isAiActive, isManualMode, isCollectionPublished, children, statusValue, onEdit, onSetAsDraft, onStageForPublish, onSetAsPublished, onDuplicate, onDelete, lockInfo }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -168,7 +170,11 @@ function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, chil
         {...attributes}
         {...(!isSaving ? listeners : {})}
         onContextMenu={isSaving ? (e) => e.preventDefault() : undefined}
-        className={`group border-b hover:bg-secondary/50 transition-colors ${isDisabled ? 'bg-secondary/30' : ''}`}
+        className={cn(
+          'group border-b hover:bg-secondary/50 transition-colors',
+          isDisabled && 'bg-secondary/30',
+          isAiActive && 'ai-activity-shimmer',
+        )}
       >
         {children}
         {/* Lock indicator - as proper table cell */}
@@ -194,6 +200,7 @@ function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, chil
 interface SortableCollectionItemProps {
   collection: Collection;
   isSelected: boolean;
+  isAiActive?: boolean;
   isHovered: boolean;
   openDropdownId: string | null;
   isRenaming: boolean;
@@ -216,6 +223,7 @@ interface SortableCollectionItemProps {
 function SortableCollectionItem({
   collection,
   isSelected,
+  isAiActive,
   isHovered,
   openDropdownId,
   isRenaming,
@@ -281,7 +289,8 @@ function SortableCollectionItem({
             'px-3 h-8 rounded-lg flex gap-2 items-center justify-between text-left w-full group cursor-grab active:cursor-grabbing',
             isSelected
               ? 'bg-primary text-primary-foreground'
-              : 'hover:bg-secondary/50 text-secondary-foreground/80 dark:text-muted-foreground'
+              : 'hover:bg-secondary/50 text-secondary-foreground/80 dark:text-muted-foreground',
+            isAiActive && 'ai-activity-shimmer'
           )}
           onClick={onSelect}
           onDoubleClick={onDoubleClick}
@@ -373,6 +382,10 @@ const CMS = React.memo(function CMS() {
     setItemStatus,
     reloadCurrentItems,
   } = useCollectionsStore();
+
+  // Collections / items the AI agent is currently working on (drives the CMS shimmer).
+  const aiActiveCollectionIds = useEditorStore((state) => state.aiActiveCollectionIds);
+  const aiActiveItemIds = useEditorStore((state) => state.aiActiveItemIds);
 
   // Collection collaboration sync
   const liveCollectionUpdates = useLiveCollectionUpdates();
@@ -1674,6 +1687,7 @@ const CMS = React.memo(function CMS() {
                     key={item.id}
                     item={item}
                     isSaving={isTempId(item.id)}
+                    isAiActive={aiActiveItemIds.includes(item.id)}
                     isManualMode={isManualMode}
                     isCollectionPublished={selectedCollection?.has_published_version ?? false}
                     statusValue={statusFieldId ? parseStatusValue(item.values[statusFieldId]) : null}
@@ -2152,6 +2166,7 @@ const CMS = React.memo(function CMS() {
                   key={collection.id}
                   collection={collection}
                   isSelected={cmsSection === 'collections' && selectedCollectionId === collection.id}
+                  isAiActive={aiActiveCollectionIds.includes(collection.id)}
                   isHovered={hoveredCollectionId === collection.id}
                   openDropdownId={collectionDropdownId}
                   isRenaming={canManageSchema && collectionRename.renamingId === collection.id}

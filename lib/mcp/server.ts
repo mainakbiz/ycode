@@ -6,7 +6,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SYSTEM_INSTRUCTIONS } from '@/lib/mcp/instructions';
+import { DEFERRED_GROUP_GUIDES, MCP_PUBLISHING_INSTRUCTIONS, SYSTEM_INSTRUCTIONS } from '@/lib/mcp/instructions';
 import { registerPageTools } from '@/lib/mcp/tools/pages';
 import { registerPageFolderTools } from '@/lib/mcp/tools/page-folders';
 import { registerLayerTools } from '@/lib/mcp/tools/layers';
@@ -29,9 +29,13 @@ import { registerReferenceResources } from '@/lib/mcp/resources/reference';
 import { registerSiteResources } from '@/lib/mcp/resources/site';
 
 export function createMcpServer(): McpServer {
+  // External MCP agents get every tool up front, so they also get the full
+  // deferred-group guides plus the publishing instructions. The in-app agent
+  // runtime uses SYSTEM_INSTRUCTIONS alone, delivers group guides via
+  // load_tools, and appends its own draft-first (never publish) policy instead.
   const server = new McpServer(
     { name: 'ycode', version: '1.0.0' },
-    { instructions: SYSTEM_INSTRUCTIONS },
+    { instructions: SYSTEM_INSTRUCTIONS + '\n' + Object.values(DEFERRED_GROUP_GUIDES).join('\n\n') + MCP_PUBLISHING_INSTRUCTIONS },
   );
 
   registerPageTools(server);

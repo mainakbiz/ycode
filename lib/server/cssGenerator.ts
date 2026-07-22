@@ -162,8 +162,9 @@ export async function generateAndSaveDraftCSS(): Promise<string> {
  * is recalculated automatically since it includes generated_css.
  */
 export async function generateCSSForPage(pageId: string): Promise<string | null> {
-  const updated = await generateCSSForPages([pageId]);
-  if (updated === 0) return null;
+  await generateCSSForPages([pageId]);
+  // Re-read regardless of whether a write happened: an already-fresh page is
+  // skipped by generateCSSForPages (no write) but still has valid CSS to return.
   const pageLayers = await getDraftLayers(pageId);
   return pageLayers?.generated_css ?? null;
 }
@@ -219,6 +220,12 @@ export async function generateCSSForPages(pageIds: string[]): Promise<number> {
     const layersForCss = collectLayersWithComponents(pageLayers.layers, components, seedComponentIds);
     const classes = extractClassesFromLayers(layersForCss);
     const css = await compileCss(Array.from(classes));
+
+    // Skip the write when the compiled CSS is unchanged. This keeps publish-time
+    // regeneration cheap: pages already in sync (e.g. edited in the builder)
+    // compile to identical CSS, so their generated_css/content_hash/updated_at
+    // stay put and they aren't needlessly republished or cache-invalidated.
+    if (pageLayers.generated_css === css) continue;
 
     await updatePageGeneratedCss(pageId, pageLayers, css);
     updated++;

@@ -35,6 +35,7 @@ interface FontsState {
 
 interface FontsActions {
   loadFonts: () => Promise<void>;
+  refreshFonts: () => Promise<void>;
   setFonts: (fonts: Font[]) => void;
   addFont: (font: Font) => void;
   removeFont: (fontId: string) => void;
@@ -93,6 +94,24 @@ export const useFontsStore = create<FontsStore>((set, get) => ({
     }
   },
 
+  /**
+   * Re-fetch fonts from the API even if already loaded. Used when fonts change
+   * server-side (e.g. the AI agent installs a font) so the canvas picks them
+   * up without a page reload.
+   */
+  refreshFonts: async () => {
+    try {
+      const response = await fetch('/ycode/api/fonts');
+      if (!response.ok) throw new Error('Failed to fetch fonts');
+
+      const { data: fonts } = await response.json();
+      set({ fonts: fonts || [], isLoaded: true });
+      get().rebuildCss();
+    } catch (error) {
+      console.error('Failed to refresh fonts:', error);
+    }
+  },
+
   /** Set fonts directly (e.g., from initial load) */
   setFonts: (fonts: Font[]) => {
     set({ fonts, isLoaded: true });
@@ -101,10 +120,17 @@ export const useFontsStore = create<FontsStore>((set, get) => ({
 
   /** Add a font to the store */
   addFont: (font: Font) => {
-    set((state) => ({
-      fonts: [...state.fonts, font],
-    }));
-    get().rebuildCss();
+    let added = false;
+    set((state) => {
+      // Idempotent: skip if a font with this id already exists so the list can
+      // never hold a duplicate id (which crashes keyed list renders). Guards
+      // against double-invokes (React StrictMode, rapid retries) and any future
+      // realtime create path that could deliver the same font more than once.
+      if (state.fonts.some((existing) => existing.id === font.id)) return state;
+      added = true;
+      return { fonts: [...state.fonts, font] };
+    });
+    if (added) get().rebuildCss();
   },
 
   /** Remove a font from the store */

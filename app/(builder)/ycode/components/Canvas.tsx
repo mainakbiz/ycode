@@ -14,6 +14,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createRoot, Root } from 'react-dom/client';
+import gsap from 'gsap';
 
 import LayerRenderer from '@/components/LayerRenderer';
 import { serializeLayers, getClassesString } from '@/lib/layer-utils';
@@ -329,6 +330,16 @@ const Canvas = React.memo(function Canvas({
   // State
   const [iframeReady, setIframeReady] = useState(false);
 
+  // Entrance-animation signal. Driven off the nonce (bumped on every remote
+  // update) while the actual ids are read lazily from the store, so identical id
+  // arrays across consecutive remote updates still trigger the animation.
+  const canvasEnterNonce = useEditorStore((state) => state.canvasEnterNonce);
+
+  // Layer ids already animated in this page session. Prevents duplicate signals
+  // (e.g. the realtime broadcast followed by the authoritative page_changed
+  // snapshot) from replaying the same entrance. Reset on page change below.
+  const animatedEnterIdsRef = useRef<Set<string>>(new Set());
+
   // Translate component-instance override values before serialization so that
   // `resolveComponents` (inside serializeLayers) propagates per-instance
   // translations through the override pipeline. Runs only when a non-default
@@ -622,6 +633,36 @@ const Canvas = React.memo(function Canvas({
     styleEl.textContent = customHeadCss;
   }, [iframeReady, customHeadCss]);
 
+  // Inject the server-compiled Tailwind stylesheet for the current page — the
+  // same `generated_css` published pages inject via PageRenderer. The canvas's
+  // Tailwind Browser CDN JIT is unreliable for large bulk inserts (AI/MCP page
+  // builds), so it would leave layers unstyled ("black and white") until
+  // publish. Injecting the precompiled CSS gives a reliable baseline; the CDN
+  // still layers on top for live single-property edits made in the builder.
+  // Skipped while editing a component (no page draft is bound to the canvas).
+  const generatedCss = usePagesStore((state) =>
+    pageId && !editingComponentId ? state.draftsByPageId[pageId]?.generated_css ?? '' : ''
+  );
+
+  useEffect(() => {
+    if (!iframeReady || !iframeRef.current) return;
+    const iframeDoc = iframeRef.current.contentDocument;
+    if (!iframeDoc) return;
+
+    const STYLE_ID = 'ycode-canvas-styles';
+    let styleEl = iframeDoc.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (!generatedCss) {
+      styleEl?.remove();
+      return;
+    }
+    if (!styleEl) {
+      styleEl = iframeDoc.createElement('style');
+      styleEl.id = STYLE_ID;
+      iframeDoc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = generatedCss;
+  }, [iframeReady, generatedCss]);
+
   // Render content into iframe
   useEffect(() => {
     if (!iframeReady || !rootRef.current) return;
@@ -675,6 +716,88 @@ const Canvas = React.memo(function Canvas({
     availableLocales,
     translations,
   ]);
+
+  // Forget animated ids when switching pages so a fresh page's remote edits can
+  // animate (and a navigation itself never animates the whole tree).
+  useEffect(() => {
+    animatedEnterIdsRef.current = new Set();
+  }, [pageId]);
+
+  // Reveal newly-arrived remote layers (AI/MCP/collaborator) step by step: each
+  // added layer fades in one after another in document order (container first,
+  // then its contents), so a section visibly assembles itself instead of popping
+  // in all at once. Local edits never set this signal, so they stay instant.
+  useEffect(() => {
+    if (canvasEnterNonce === 0 || !iframeReady || !iframeRef.current) return;
+
+    const iframeDoc = iframeRef.current.contentDocument;
+    const iframeWindow = iframeRef.current.contentWindow;
+    const iframeGsap = (iframeWindow as unknown as { gsap?: typeof gsap } | null)?.gsap;
+    if (!iframeDoc || !iframeWindow || !iframeGsap) return;
+
+    const pending = useEditorStore
+      .getState()
+      .canvasEnterLayerIds.filter((id) => !animatedEnterIdsRef.current.has(id));
+    if (pending.length === 0) return;
+
+    // Respect reduced-motion: skip the animation, but still mark the ids so a
+    // later duplicate signal doesn't try to animate them either.
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+      pending.forEach((id) => animatedEnterIdsRef.current.add(id));
+      return;
+    }
+
+    // The iframe's React root commits asynchronously; wait two frames so the new
+    // nodes exist in the DOM before we query and animate them.
+    let rafInner = 0;
+    const rafOuter = iframeWindow.requestAnimationFrame(() => {
+      rafInner = iframeWindow.requestAnimationFrame(() => {
+        const nodes: HTMLElement[] = [];
+        for (const id of pending) {
+          animatedEnterIdsRef.current.add(id);
+          // Skip layers hidden on canvas (on-load animation placeholders).
+          if (editorHiddenLayerIds.has(id)) continue;
+          const el = iframeDoc.querySelector(`[data-layer-id="${id}"]`) as HTMLElement | null;
+          if (el) nodes.push(el);
+        }
+        if (nodes.length === 0) return;
+
+        // Order by document position (parents before children, top to bottom) so
+        // the reveal reads as the section being built piece by piece.
+        nodes.sort((a, b) => {
+          const relation = a.compareDocumentPosition(b);
+          if (relation & 0x04) return -1; // DOCUMENT_POSITION_FOLLOWING: a precedes b
+          if (relation & 0x02) return 1; // DOCUMENT_POSITION_PRECEDING: a follows b
+          return 0;
+        });
+
+        // Keep the whole cascade within a bounded window so large sections still
+        // finish quickly: shrink the per-item delay as the count grows.
+        const REVEAL_WINDOW = 1.2;
+        const stagger = Math.min(0.06, REVEAL_WINDOW / nodes.length);
+
+        // autoAlpha (opacity-only) avoids transforms compounding through nested
+        // added layers; each element simply fades in on its turn.
+        iframeGsap.from(nodes, {
+          autoAlpha: 0,
+          duration: 0.35,
+          stagger,
+          ease: 'power1.out',
+          clearProps: 'opacity,visibility',
+        });
+      });
+    });
+
+    return () => {
+      iframeWindow.cancelAnimationFrame(rafOuter);
+      if (rafInner) iframeWindow.cancelAnimationFrame(rafInner);
+    };
+    // Driven by the nonce; ids are read lazily from the store inside the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasEnterNonce, iframeReady]);
 
   // Handle keyboard events from iframe
   useEffect(() => {

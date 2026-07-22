@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { isAgentSecretSettingKey } from '@/lib/agent/config';
 import { getAllSettings, getSettingByKey, setSetting, setSettings } from '@/lib/repositories/settingsRepository';
 
 export function registerSettingsTools(server: McpServer) {
@@ -11,7 +12,7 @@ export function registerSettingsTools(server: McpServer) {
     },
     async ({ key }) => {
       if (key) {
-        const value = await getSettingByKey(key);
+        const value = isAgentSecretSettingKey(key) ? '[redacted]' : await getSettingByKey(key);
         return {
           content: [{
             type: 'text' as const,
@@ -26,7 +27,7 @@ export function registerSettingsTools(server: McpServer) {
           type: 'text' as const,
           text: JSON.stringify(settings.map((s) => ({
             key: s.key,
-            value: s.value,
+            value: isAgentSecretSettingKey(s.key) ? '[redacted]' : s.value,
           })), null, 2),
         }],
       };

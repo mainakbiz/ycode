@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isAgentSecretSettingKey } from '@/lib/agent/config';
 import { setSettings } from '@/lib/repositories/settingsRepository';
 import { clearAllCache, getAllPublishedRoutes, warmRoutes } from '@/lib/services/cacheService';
 
 /**
  * Setting keys that don't affect public-page rendering. Mirrors the list in
- * /ycode/api/settings/[key]/route.ts — keep them in sync.
+ * /ycode/api/settings/[key]/route.ts — keep them in sync. Agent secrets
+ * (shared and per-user) are covered by isAgentSecretSettingKey.
  */
-const DRAFT_ONLY_SETTING_KEYS = new Set(['draft_css', 'email']);
+const DRAFT_ONLY_SETTING_KEYS = new Set([
+  'draft_css',
+  'email',
+  'ai_model',
+  'ai_enabled_models',
+  'ai_agent_enabled',
+]);
 
 /**
  * PUT /ycode/api/settings/batch
@@ -32,7 +40,7 @@ export async function PUT(request: NextRequest) {
     // Only invalidate caches if any of the updated keys actually affect
     // public page rendering. Skips builder-only autosaves.
     const touchesPublicKeys = Object.keys(settings).some(
-      (key) => !DRAFT_ONLY_SETTING_KEYS.has(key)
+      (key) => !DRAFT_ONLY_SETTING_KEYS.has(key) && !isAgentSecretSettingKey(key)
     );
     if (touchesPublicKeys) {
       await clearAllCache();

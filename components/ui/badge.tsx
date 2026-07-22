@@ -15,6 +15,7 @@ const badgeVariants = cva(
         outline: 'text-foreground/70 [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         inline_variable_canvas: 'border-transparent bg-gray-900/90 text-white/90 font-normal',
         green: 'bg-green-400/15 border-transparent text-current font-normal',
+        teal: 'bg-[#cee3eb] dark:bg-[#3d8fb1]/50 border-transparent text-[#3d8fb1] dark:text-[#cee3eb] font-normal',
       },
     },
     defaultVariants: {

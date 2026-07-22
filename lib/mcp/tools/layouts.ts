@@ -50,11 +50,12 @@ Use add_layout to insert any of these into a page.`,
 
   server.tool(
     'add_layout',
-    `Insert a pre-built layout section into a page from YCode's template library.
-Use list_layouts to see available layouts.`,
+    `Insert a pre-built, fully-styled layout section into a page. Prefer this over building sections
+from scratch. The available layout keys are listed in your system instructions — call this directly
+without list_layouts (only use list_layouts if you need preview image URLs).`,
     {
       page_id: z.string().describe('The page ID'),
-      layout_key: z.string().describe('Layout key from list_layouts (e.g. "hero-001")'),
+      layout_key: z.string().describe('Layout key (e.g. "hero-001", "pricing-001", "footer-002")'),
       parent_layer_id: z.string().optional().describe('Parent layer ID. If omitted, appends to page root.'),
       position: z.number().optional().describe('Position within parent. Omit to append at end.'),
     },

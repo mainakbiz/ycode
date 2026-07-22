@@ -7,6 +7,7 @@ import {
   deleteColorVariable,
   reorderColorVariables,
 } from '@/lib/repositories/colorVariableRepository';
+import { broadcastColorVariablesChanged } from '@/lib/mcp/broadcast';
 
 export function registerColorVariableTools(server: McpServer) {
   server.tool(
@@ -38,6 +39,7 @@ export function registerColorVariableTools(server: McpServer) {
     },
     async ({ name, value }) => {
       const variable = await createColorVariable({ name, value });
+      await broadcastColorVariablesChanged();
       return {
         content: [{
           type: 'text' as const,
@@ -65,6 +67,7 @@ export function registerColorVariableTools(server: McpServer) {
       if (value !== undefined) updates.value = value;
 
       const variable = await updateColorVariable(variable_id, updates);
+      await broadcastColorVariablesChanged();
       return {
         content: [{
           type: 'text' as const,
@@ -82,6 +85,7 @@ export function registerColorVariableTools(server: McpServer) {
     },
     async ({ variable_id }) => {
       await deleteColorVariable(variable_id);
+      await broadcastColorVariablesChanged();
       return {
         content: [{ type: 'text' as const, text: `Color variable ${variable_id} deleted successfully.` }],
       };
@@ -96,6 +100,7 @@ export function registerColorVariableTools(server: McpServer) {
     },
     async ({ ordered_ids }) => {
       await reorderColorVariables(ordered_ids);
+      await broadcastColorVariablesChanged();
       return {
         content: [{ type: 'text' as const, text: `Reordered ${ordered_ids.length} color variables.` }],
       };

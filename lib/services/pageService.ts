@@ -537,6 +537,25 @@ export async function publishPages(pageIds: string[]): Promise<PublishPagesResul
     })
     .map(p => p.id);
 
+  // Regenerate per-page CSS for the pages being published before their layers
+  // are copied live. Layer edits made outside the builder editor — AI/MCP tools,
+  // Figma import, etc. — update each layer's `classes` but never recompile the
+  // page's `generated_css`. The draft's content_hash then reflects the new
+  // layers paired with STALE CSS, so the live page ships fresh markup styled by
+  // outdated CSS (missing styles until an unrelated manual edit triggers a
+  // recompile). Recompiling here refreshes generated_css and content_hash, so
+  // batchPublishPageLayers detects the change and the live page gets CSS for its
+  // current classes. Pages already in sync compile to identical CSS and are
+  // skipped (no write), so the normal builder publish flow pays nothing.
+  if (pageIdsForLayerPublish.length > 0) {
+    try {
+      const { generateCSSForPages } = await import('@/lib/server/cssGenerator');
+      await generateCSSForPages(pageIdsForLayerPublish);
+    } catch (error) {
+      console.error('[publish] Per-page CSS regeneration failed (non-fatal):', error);
+    }
+  }
+
   // Time layers publishing
   const layersStart = performance.now();
   const layersResult = await batchPublishPageLayers(pageIdsForLayerPublish);

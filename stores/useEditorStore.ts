@@ -88,6 +88,23 @@ interface EditorActions {
   canUndo: () => boolean;
   canRedo: () => boolean;
   setInteractionHighlights: (triggerIds: string[], targetIds: string[]) => void;
+  setAiActiveLayerIds: (ids: string[]) => void;
+  /** Set the collections the AI is currently working on (CMS shimmer). */
+  setAiActiveCollectionIds: (ids: string[]) => void;
+  /** Set the collection items the AI is currently editing (CMS row shimmer). */
+  setAiActiveItemIds: (ids: string[]) => void;
+  /** Flag newly-arrived remote layers so the canvas can animate their entrance. */
+  markLayersEntering: (ids: string[]) => void;
+  /** Set the page the AI is actively building (drives the canvas build skeleton). */
+  setAiBuildingPageId: (pageId: string | null) => void;
+  /** Set the component the AI is actively editing (drives auto-opening component
+   * edit mode). Pass the variant it's editing so the right variant opens. */
+  setAiBuildingComponentId: (componentId: string | null, variantId?: string | null) => void;
+  /** Reset the "AI opened component edit mode this turn" flag. */
+  setAiOpenedComponentEdit: (value: boolean) => void;
+  /** Request that the builder auto-exit component edit mode back to the page
+   * (consumed by YCodeBuilderMain after an AI-driven component edit finishes). */
+  setPendingAiComponentExit: (value: boolean) => void;
   setActiveInteraction: (triggerId: string | null, targetIds: string[]) => void;
   clearActiveInteraction: () => void;
   openCollectionItemSheet: (collectionId: string, itemId: string) => void;
@@ -140,6 +157,30 @@ interface EditorStoreWithHistory extends EditorState {
   builderDataPreloaded: boolean;
   interactionTriggerLayerIds: string[];
   interactionTargetLayerIds: string[];
+  /** Layer IDs the AI agent is currently editing (drives the canvas shimmer overlay) */
+  aiActiveLayerIds: string[];
+  /** Collection IDs the AI agent is currently working on (drives the CMS shimmer) */
+  aiActiveCollectionIds: string[];
+  /** Collection item IDs the AI agent is currently editing (drives the CMS row shimmer) */
+  aiActiveItemIds: string[];
+  /** Outermost layer IDs that just arrived from a remote source (AI/MCP/collaborator),
+   * consumed by the canvas to play a staggered entrance animation. */
+  canvasEnterLayerIds: string[];
+  /** Bumped on every markLayersEntering call so the canvas reacts even when the
+   * same ids repeat across consecutive remote updates. */
+  canvasEnterNonce: number;
+  /** Page the AI is currently building. When this matches the open page and the
+   * canvas is still empty, a skeleton placeholder is shown for instant feedback. */
+  aiBuildingPageId: string | null;
+  /** Component the AI is currently editing. Drives auto-opening component edit
+   * mode so the user watches the changes happen in the right place. */
+  aiBuildingComponentId: string | null;
+  aiBuildingComponentVariantId: string | null;
+  /** True when the AI (not the user) opened component edit mode this turn, so the
+   * builder can return the user to their page once the turn finishes. */
+  aiOpenedComponentEdit: boolean;
+  /** Set at turn end to trigger the auto-exit back to the page. */
+  pendingAiComponentExit: boolean;
   activeInteractionTriggerLayerId: string | null;
   activeInteractionTargetLayerIds: string[];
   activeTextStyleKey: string | null; // Currently active text style (e.g., 'bold', 'italic')
@@ -186,6 +227,10 @@ interface EditorStoreWithHistory extends EditorState {
   // Canvas context menu state (hides overlay while menu is open)
   isCanvasContextMenuOpen: boolean;
   setCanvasContextMenuOpen: (value: boolean) => void;
+  // AI chat "reference a layer" mode: tints canvas outlines teal and shows a
+  // crosshair cursor while the user picks a layer to mention in the AI composer.
+  isAiLayerPicking: boolean;
+  setAiLayerPicking: (value: boolean) => void;
   // Swiper-calculated snap page counts per slider (used for bullet replication)
   sliderSnapCounts: Record<string, number>;
   setSliderSnapCount: (sliderId: string, count: number) => void;
@@ -239,6 +284,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   builderDataPreloaded: false,
   interactionTriggerLayerIds: [],
   interactionTargetLayerIds: [],
+  aiActiveLayerIds: [],
+  aiActiveCollectionIds: [],
+  aiActiveItemIds: [],
+  canvasEnterLayerIds: [],
+  canvasEnterNonce: 0,
+  aiBuildingPageId: null,
+  aiBuildingComponentId: null,
+  aiBuildingComponentVariantId: null,
+  aiOpenedComponentEdit: false,
+  pendingAiComponentExit: false,
   activeInteractionTriggerLayerId: null,
   activeInteractionTargetLayerIds: [],
   activeTextStyleKey: null,
@@ -277,6 +332,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setLeftSidebarWidth: (value) => set({ leftSidebarWidth: value }),
   isCanvasContextMenuOpen: false,
   setCanvasContextMenuOpen: (value) => set({ isCanvasContextMenuOpen: value }),
+  isAiLayerPicking: false,
+  setAiLayerPicking: (value) => set({ isAiLayerPicking: value }),
   sliderSnapCounts: {},
   setSliderSnapCount: (sliderId, count) => set((state) => {
     // Swiper fires `update` on every DOM mutation inside its wrapper, which
@@ -538,6 +595,62 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     interactionTriggerLayerIds: triggerIds,
     interactionTargetLayerIds: targetIds,
   }),
+
+  setAiActiveLayerIds: (ids) => set((state) => {
+    // Bail out when nothing changes so the canvas overlay doesn't re-run its
+    // outline measurement on every identical sync from the chat store.
+    if (state.aiActiveLayerIds.length === ids.length &&
+        state.aiActiveLayerIds.every((id, i) => id === ids[i])) {
+      return state;
+    }
+    return { aiActiveLayerIds: ids };
+  }),
+
+  setAiActiveCollectionIds: (ids) => set((state) => {
+    if (state.aiActiveCollectionIds.length === ids.length &&
+        state.aiActiveCollectionIds.every((id, i) => id === ids[i])) {
+      return state;
+    }
+    return { aiActiveCollectionIds: ids };
+  }),
+
+  setAiActiveItemIds: (ids) => set((state) => {
+    if (state.aiActiveItemIds.length === ids.length &&
+        state.aiActiveItemIds.every((id, i) => id === ids[i])) {
+      return state;
+    }
+    return { aiActiveItemIds: ids };
+  }),
+
+  markLayersEntering: (ids) => set((state) => {
+    if (ids.length === 0) return state;
+    return {
+      canvasEnterLayerIds: ids,
+      canvasEnterNonce: state.canvasEnterNonce + 1,
+    };
+  }),
+
+  setAiBuildingPageId: (pageId) => set((state) => (
+    state.aiBuildingPageId === pageId ? state : { aiBuildingPageId: pageId }
+  )),
+
+  setAiBuildingComponentId: (componentId, variantId = null) => set((state) => {
+    if (state.aiBuildingComponentId === componentId && state.aiBuildingComponentVariantId === variantId) {
+      return state;
+    }
+    // Opening a component the user wasn't already editing means the AI initiated
+    // it — remember so we can return the user to their page when the turn ends.
+    const aiOpenedFresh = !!componentId && !state.editingComponentId && !state.aiOpenedComponentEdit;
+    return {
+      aiBuildingComponentId: componentId,
+      aiBuildingComponentVariantId: variantId,
+      ...(aiOpenedFresh ? { aiOpenedComponentEdit: true } : {}),
+    };
+  }),
+
+  setAiOpenedComponentEdit: (value) => set({ aiOpenedComponentEdit: value }),
+
+  setPendingAiComponentExit: (value) => set({ pendingAiComponentExit: value }),
 
   setActiveInteraction: (triggerId, targetIds) => set({
     activeInteractionTriggerLayerId: triggerId,

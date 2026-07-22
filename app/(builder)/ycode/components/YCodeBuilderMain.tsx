@@ -23,6 +23,7 @@ import { useEffect, useState, useMemo, useRef, useCallback, Suspense, lazy } fro
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 // 2. Internal components
+import AiChatPanel from '../components/ai/AiChatPanel';
 import CenterCanvas from '../components/CenterCanvas';
 import HeaderBar from '../components/HeaderBar';
 import LeftSidebar from '../components/LeftSidebar';
@@ -37,7 +38,7 @@ import { toast } from 'sonner';
 import { checkCircularReference, detachSpecificLayerFromComponent } from '@/lib/component-utils';
 
 // Right sidebar is always visible in editor mode - load eagerly to avoid delay
-import RightSidebar from '../components/RightSidebar';
+import RightPanel from '../components/RightPanel';
 
 // Lazy-loaded components (heavy, not needed on initial render)
 const CMS = lazy(() => import('../components/CMS'));
@@ -53,12 +54,15 @@ const RealtimeCursors = lazy(() => import('@/components/realtime-cursors').then(
 // 3. Hooks
 // useCanvasCSS removed - now handled by iframe with Tailwind JIT CDN
 import { useEditorUrl } from '@/hooks/use-editor-url';
+import { useLiveColorVariableUpdates } from '@/hooks/use-live-color-variable-updates';
+import { useLiveFontUpdates } from '@/hooks/use-live-font-updates';
 import { useLiveLayerUpdates } from '@/hooks/use-live-layer-updates';
 import { useLivePageUpdates } from '@/hooks/use-live-page-updates';
 import { useLiveComponentUpdates } from '@/hooks/use-live-component-updates';
 import { useLiveLayerStyleUpdates } from '@/hooks/use-live-layer-style-updates';
 
 // 4. Stores
+import { useAgentSettingsStore } from '@/stores/useAgentSettingsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useClipboardStore } from '@/stores/useClipboardStore';
 import { useEditorStore } from '@/stores/useEditorStore';
@@ -107,6 +111,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
 
   // Role-based access
   const { isEditor, canEditStructure } = useRole();
+
+  // Agent can be turned off in Settings → Agent; the builder then only shows
+  // manual mode (RightPanel handles its own fallback, this gates the CMS panel).
+  const agentEnabled = useAgentSettingsStore((state) => state.status?.agentEnabled ?? true);
   const canEditStructureRef = useRef(canEditStructure);
   canEditStructureRef.current = canEditStructure;
 
@@ -126,6 +134,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const canUndo = useEditorStore((state) => state.canUndo);
   const canRedo = useEditorStore((state) => state.canRedo);
   const editingComponentId = useEditorStore((state) => state.editingComponentId);
+  const aiBuildingPageId = useEditorStore((state) => state.aiBuildingPageId);
+  const aiBuildingComponentId = useEditorStore((state) => state.aiBuildingComponentId);
+  const aiBuildingComponentVariantId = useEditorStore((state) => state.aiBuildingComponentVariantId);
+  const pendingAiComponentExit = useEditorStore((state) => state.pendingAiComponentExit);
   const builderDataPreloaded = useEditorStore((state) => state.builderDataPreloaded);
   const setBuilderDataPreloaded = useEditorStore((state) => state.setBuilderDataPreloaded);
   const collectionItemSheet = useEditorStore((state) => state.collectionItemSheet);
@@ -210,6 +222,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   // Component and layer style sync hooks
   const liveComponentUpdates = useLiveComponentUpdates();
   const liveLayerStyleUpdates = useLiveLayerStyleUpdates();
+  // Refetch fonts when the AI agent installs one server-side
+  useLiveFontUpdates();
+  // Refetch color variables when the AI agent creates/updates tokens server-side
+  useLiveColorVariableUpdates();
 
   // Collaboration presence - set current user for syncing
   const setCurrentCollaborationUser = useCollaborationPresenceStore((state) => state.setCurrentUser);
@@ -983,6 +999,47 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
   }, [currentPageId, currentDraft, setSelectedLayerId, urlState.layerId]);
 
+  // When the AI starts editing a page other than the one open, switch to it so
+  // the user watches the changes happen on the right page. Guarded so it never
+  // yanks the user out of component editing or a non-page route, and it only
+  // navigates once per target (currentPageId then matches aiBuildingPageId).
+  useEffect(() => {
+    if (!aiBuildingPageId || aiBuildingPageId === currentPageId) return;
+    if (editingComponentId) return;
+    if (routeType !== 'page' && routeType !== 'layers') return;
+    if (!pages.some((page) => page.id === aiBuildingPageId)) return;
+    setCurrentPageId(aiBuildingPageId);
+    navigateToLayers(aiBuildingPageId);
+  }, [aiBuildingPageId, currentPageId, editingComponentId, routeType, pages, setCurrentPageId, navigateToLayers]);
+
+  // When the AI starts editing a component, auto-open that component's edit mode
+  // so the user watches the changes happen in the right place (mirrors the page
+  // flow above). Only fires on design routes — never yanks the user out of CMS,
+  // forms, or settings — and navigates once per target (editingComponentId then
+  // matches aiBuildingComponentId).
+  useEffect(() => {
+    if (!aiBuildingComponentId || aiBuildingComponentId === editingComponentId) return;
+    if (routeType !== 'page' && routeType !== 'layers' && routeType !== 'component') return;
+
+    const { getComponentById, loadComponentDraft } = useComponentsStore.getState();
+    const component = getComponentById(aiBuildingComponentId);
+    if (!component) return;
+
+    const variantExists = aiBuildingComponentVariantId
+      && component.variants?.some((v) => v.id === aiBuildingComponentVariantId);
+    const variantId = variantExists
+      ? aiBuildingComponentVariantId
+      : (component.variants && component.variants.length > 0 ? component.variants[0].id : null);
+
+    void (async () => {
+      await loadComponentDraft(aiBuildingComponentId);
+      const { setEditingComponentId, setEditingComponentVariantId } = useEditorStore.getState();
+      setEditingComponentId(aiBuildingComponentId, currentPageId);
+      setEditingComponentVariantId(variantId);
+      navigateToComponent(aiBuildingComponentId, undefined, undefined, variantId ?? undefined);
+    })();
+  }, [aiBuildingComponentId, aiBuildingComponentVariantId, editingComponentId, routeType, currentPageId, navigateToComponent]);
+
   const selectedLayerIdRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<string[]>([]);
 
@@ -1491,6 +1548,19 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
 
     // Selection will be restored by the URL sync effect
   }, [navigateToLayers, navigateToComponent, liveComponentUpdates, pages]);
+
+  // After an AI turn that opened component edit mode on its own (the user was on
+  // a page and only mentioned/asked to edit a component), return the user to
+  // their page so they aren't stranded in edit mode. The store sets
+  // `pendingAiComponentExit` once the turn (including any review passes) settles.
+  useEffect(() => {
+    if (!pendingAiComponentExit) return;
+    const { editingComponentId: activeComponentId, setPendingAiComponentExit } = useEditorStore.getState();
+    setPendingAiComponentExit(false);
+    if (activeComponentId) {
+      void handleExitComponentEditMode();
+    }
+  }, [pendingAiComponentExit, handleExitComponentEditMode]);
 
   // Global keyboard shortcuts — reads selection from refs to avoid recreating handler on every selection change
   useEffect(() => {
@@ -2274,6 +2344,17 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
               <Suspense fallback={null}>
                 <CMS />
               </Suspense>
+              {!isEditor && agentEnabled && (
+                <div className="w-64 shrink-0 bg-background border-l flex flex-col h-full overflow-hidden">
+                  <div className="px-4 pt-4 shrink-0">
+                    <div className="flex h-8 items-center">
+                      <span className="text-xs font-medium">Agent</span>
+                    </div>
+                    <hr className="mt-4" />
+                  </div>
+                  <AiChatPanel embedded />
+                </div>
+              )}
             </div>
 
             {/* Design View - kept mounted for instant switching */}
@@ -2288,11 +2369,9 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                 liveComponentUpdates={liveComponentUpdates}
               />
 
-              {/* Right Sidebar - Properties (hidden for editor role) */}
+              {/* Right Sidebar - Agent (AI) / Human (properties) switch */}
               {!isEditor && (
-                <RightSidebar
-                  onLayerUpdate={handleLayerUpdate}
-                />
+                <RightPanel onLayerUpdate={handleLayerUpdate} />
               )}
             </div>
           </>

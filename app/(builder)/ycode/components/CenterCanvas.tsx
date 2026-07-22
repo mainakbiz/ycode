@@ -53,7 +53,9 @@ import { useCanvasTextEditorStore } from '@/stores/useCanvasTextEditorStore';
 
 // 4b. Internal components
 import Canvas from './Canvas';
+import CanvasBuildSkeleton from './CanvasBuildSkeleton';
 import { CollectionFieldSelector } from './CollectionFieldSelector';
+import AiActivityOverlay from '@/components/AiActivityOverlay';
 import SelectionOverlay from '@/components/SelectionOverlay';
 import RichTextLinkPopover from './RichTextLinkPopover';
 import PageSelector from './PageSelector';
@@ -658,6 +660,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const setCurrentPageCollectionItemId = useEditorStore((state) => state.setCurrentPageCollectionItemId);
   const setHoveredLayerId = useEditorStore((state) => state.setHoveredLayerId);
   const isPreviewMode = useEditorStore((state) => state.isPreviewMode);
+  const aiBuildingPageId = useEditorStore((state) => state.aiBuildingPageId);
   const activeSidebarTab = useEditorStore((state) => state.activeSidebarTab);
   const activeInteractionTriggerLayerId = useEditorStore((state) => state.activeInteractionTriggerLayerId);
   const activeInteractionTargetLayerIds = useEditorStore((state) => state.activeInteractionTargetLayerIds);
@@ -668,6 +671,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const activeListItemIndex = useEditorStore((state) => state.activeListItemIndex);
   const elementPicker = useEditorStore((state) => state.elementPicker);
   const stopElementPicker = useEditorStore((state) => state.stopElementPicker);
+  const isAiLayerPicking = useEditorStore((state) => state.isAiLayerPicking);
   const assets = useAssetsStore((state) => state.assets);
 
   // Note: Canvas drag-and-drop state is handled by useCanvasDropDetection hook
@@ -1075,6 +1079,18 @@ const CenterCanvas = React.memo(function CenterCanvas({
     // across browsers, which avoids a noticeable lag before smooth scrolling begins.
     scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: smooth ? 'smooth' : 'auto' });
   }, [canvasIframeElement]);
+
+  // Show a crosshair cursor inside the canvas while the AI composer is in
+  // "reference a layer" mode (the scroll container handles the area around it).
+  useEffect(() => {
+    if (!isAiLayerPicking) return;
+    const iframeDoc = canvasIframeElement?.contentDocument;
+    if (!iframeDoc?.body) return;
+    iframeDoc.body.style.cursor = 'crosshair';
+    return () => {
+      iframeDoc.body.style.cursor = '';
+    };
+  }, [isAiLayerPicking, canvasIframeElement]);
 
   const scrollCanvasToLayerRef = useRef(scrollCanvasToLayer);
   scrollCanvasToLayerRef.current = scrollCanvasToLayer;
@@ -2575,6 +2591,15 @@ const CenterCanvas = React.memo(function CenterCanvas({
           />
         )}
 
+        {/* AI activity overlay - shimmering outlines on layers the agent is editing */}
+        {!isPreviewMode && activeSidebarTab !== 'pages' && canvasIframeElement && (
+          <AiActivityOverlay
+            iframeElement={canvasIframeElement}
+            containerElement={scrollContainerRef.current}
+            zoom={zoom}
+          />
+        )}
+
         {/* Drag capture overlay - prevents iframe from swallowing mouse events during drag */}
         {!isPreviewMode && <DragCaptureOverlay />}
 
@@ -2595,7 +2620,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
           ref={scrollContainerRef}
           className={cn(
             'absolute inset-0 z-0 overflow-auto',
-            elementPicker?.active && 'cursor-crosshair'
+            (elementPicker?.active || isAiLayerPicking) && 'cursor-crosshair'
           )}
           style={{
             opacity: isCanvasReady && !isComponentCanvasSettling ? 1 : 0,
@@ -2739,8 +2764,14 @@ const CenterCanvas = React.memo(function CenterCanvas({
                       {/* Sibling reorder indicator overlay - for drag-to-reorder on canvas */}
                       <CanvasSiblingReorderOverlay iframeElement={canvasIframeElement} />
 
+                      {/* Build skeleton: instant placeholder while the AI assembles
+                          the page, shown until the first real layers stream in. */}
+                      {isCanvasEmpty && aiBuildingPageId === currentPageId && (
+                        <CanvasBuildSkeleton />
+                      )}
+
                       {/* Empty overlay when only Body with no children */}
-                      {isCanvasEmpty && (
+                      {isCanvasEmpty && aiBuildingPageId !== currentPageId && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                           <div className="pointer-events-auto">
                             <Empty className="bg-transparent border-0 text-neutral-900">

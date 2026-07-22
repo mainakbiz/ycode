@@ -3,8 +3,9 @@
  * These are simplified versions focused on the MCP tool use case.
  */
 
-import type { Layer, DesignProperties, Breakpoint, UIState } from '@/types';
+import type { Layer, DesignProperties, Breakpoint, UIState, CollectionFieldType } from '@/types';
 import { generateId } from '@/lib/utils';
+import { markdownToTiptapJson } from '@/lib/markdown-to-tiptap';
 import {
   designToClassString,
   propertyToClass,
@@ -207,6 +208,68 @@ export interface RichTextBlock {
   rows?: string[][];
   header_row?: boolean;
   component_id?: string;
+}
+
+/**
+ * Coerce a single collection-item `rich_text` value into the serialized Tiptap
+ * JSON string the CMS editor and renderer expect. Accepts, in order:
+ *  - an already-built Tiptap doc object → stringified;
+ *  - a JSON string that parses to a Tiptap doc → passed through unchanged;
+ *  - an array of RichTextBlock → built via buildTiptapDoc;
+ *  - any other string → treated as markdown and converted.
+ * Empty / nullish values become null.
+ *
+ * Agents naturally produce markdown, so a plain string "## Title\n\nBody" is
+ * turned into proper rich text instead of being stored verbatim (which renders
+ * empty/broken because castValue expects a Tiptap document).
+ */
+export function coerceRichTextValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (isTiptapDoc(value)) {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return JSON.stringify(buildTiptapDoc(value as RichTextBlock[]));
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    // A pre-built Tiptap doc supplied as a JSON string passes through untouched.
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (isTiptapDoc(parsed)) return trimmed;
+      } catch {
+        // Not JSON — fall through and treat as markdown.
+      }
+    }
+    return markdownToTiptapJson(value);
+  }
+
+  // Unknown object shape: stringify so it at least round-trips through storage.
+  return JSON.stringify(value);
+}
+
+/**
+ * Pre-process a collection item's `{ fieldId: value }` map so `rich_text`
+ * fields are stored as valid Tiptap JSON. Non-rich-text fields pass through
+ * untouched. Used by the create/update collection item tools before handing
+ * values to setValuesByFieldName.
+ */
+export function coerceCollectionItemValues(
+  values: Record<string, unknown>,
+  fieldTypeById: Record<string, CollectionFieldType>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [fieldId, value] of Object.entries(values)) {
+    result[fieldId] = fieldTypeById[fieldId] === 'rich_text'
+      ? coerceRichTextValue(value)
+      : value;
+  }
+  return result;
 }
 
 function parseInlineMarks(text: string): TiptapNode[] {
@@ -618,44 +681,18 @@ export const ELEMENT_TEMPLATES: Record<string, ElementTemplateEntry> = {
   },
   form: {
     name: 'Form',
-    description: 'Form container',
-    template: {
-      name: 'form',
-      classes: ['flex', 'flex-col', 'gap-8', 'w-full'],
-      settings: { id: 'contact-form' },
-      attributes: { method: 'POST', action: '' },
-      design: {
-        sizing: { isActive: true, width: '100%' },
-        layout: { isActive: true, display: 'Flex', flexDirection: 'column', gap: '2rem' },
-      },
-      children: [],
-    },
+    description: 'Native form, pre-populated with name/email/message fields, a submit button, and success/error alerts. Configure submission behavior via update_form_settings. Add or remove native field children (input, textarea, select, etc.) to customize.',
+    useBlocksTemplate: true,
   },
   input: {
     name: 'Input',
-    description: 'Text input with label',
-    template: {
-      name: 'div',
-      classes: ['w-full', 'flex', 'flex-col', 'gap-1'],
-      design: {
-        sizing: { isActive: true, width: '100%' },
-        layout: { isActive: true, display: 'Flex', flexDirection: 'column', gap: '0.25rem' },
-      },
-      children: [],
-    },
+    description: 'Native text input with a label wrapper. Set the field type/placeholder/name via update_layer_settings.',
+    useBlocksTemplate: true,
   },
   textarea: {
     name: 'Textarea',
-    description: 'Multi-line text area',
-    template: {
-      name: 'div',
-      classes: ['w-full', 'flex', 'flex-col', 'gap-1'],
-      design: {
-        sizing: { isActive: true, width: '100%' },
-        layout: { isActive: true, display: 'Flex', flexDirection: 'column', gap: '0.25rem' },
-      },
-      children: [],
-    },
+    description: 'Native multi-line textarea with a label wrapper.',
+    useBlocksTemplate: true,
   },
   htmlEmbed: {
     name: 'Code Embed',

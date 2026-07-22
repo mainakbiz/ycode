@@ -1,43 +1,8 @@
 import { z } from 'zod';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { broadcastFontsChanged } from '@/lib/mcp/broadcast';
+import { getWeightsFromEntry, loadGoogleFontsCatalog } from '@/lib/mcp/font-install';
 import { getAllFonts, createFont, updateFont, deleteFont } from '@/lib/repositories/fontRepository';
-
-interface GoogleFontEntry {
-  family: string;
-  variants: string[];
-  category: string;
-  axes?: { tag: string; start: number; end: number }[];
-}
-
-let catalogCache: GoogleFontEntry[] | null = null;
-
-async function loadGoogleFontsCatalog(): Promise<GoogleFontEntry[]> {
-  if (catalogCache) return catalogCache;
-  try {
-    const raw = await readFile(join(process.cwd(), 'storage/fonts/google-fonts.json'), 'utf-8');
-    catalogCache = JSON.parse(raw) as GoogleFontEntry[];
-    return catalogCache;
-  } catch {
-    return [];
-  }
-}
-
-function getWeightsFromEntry(entry: GoogleFontEntry): string[] {
-  const wghtAxis = entry.axes?.find(a => a.tag === 'wght');
-  if (wghtAxis) {
-    const weights: string[] = [];
-    for (const w of [100, 200, 300, 400, 500, 600, 700, 800, 900]) {
-      if (w >= wghtAxis.start && w <= wghtAxis.end) weights.push(String(w));
-    }
-    return weights.length > 0 ? weights : ['400'];
-  }
-  return entry.variants
-    .filter(v => !v.includes('italic'))
-    .map(v => v === 'regular' ? '400' : v.replace(/italic$/, ''))
-    .filter(v => /^\d+$/.test(v));
-}
 
 export function registerFontTools(server: McpServer) {
   server.tool(
@@ -133,6 +98,7 @@ TIP: Use search_google_fonts first to discover available fonts. If you provide j
         weights: resolvedWeights,
         variants: resolvedVariants,
       });
+      broadcastFontsChanged().catch(() => {});
       return {
         content: [{
           type: 'text' as const,
@@ -161,6 +127,7 @@ TIP: Use search_google_fonts first to discover available fonts. If you provide j
       if (variants) updates.variants = variants;
       if (category) updates.category = category;
       const font = await updateFont(font_id, updates);
+      broadcastFontsChanged().catch(() => {});
       return { content: [{ type: 'text' as const, text: JSON.stringify({ message: `Updated font "${font.family}"`, font }, null, 2) }] };
     },
   );
@@ -173,6 +140,7 @@ TIP: Use search_google_fonts first to discover available fonts. If you provide j
     },
     async ({ font_id }) => {
       await deleteFont(font_id);
+      broadcastFontsChanged().catch(() => {});
       return {
         content: [{ type: 'text' as const, text: `Font ${font_id} deleted successfully.` }],
       };

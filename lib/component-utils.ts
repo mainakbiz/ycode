@@ -5,6 +5,7 @@
  */
 
 import type { Layer, Component } from '@/types';
+import { generateId } from '@/lib/utils';
 import { getComponentVariantLayers } from './component-variant-utils';
 import { regenerateIdsWithInteractionRemapping } from './layer-utils';
 
@@ -222,6 +223,42 @@ export function checkCircularReference(
   return result.cyclePath
     ? getCircularReferenceMessage(result.cyclePath, components)
     : 'This action would create an infinite component loop';
+}
+
+/**
+ * Build a fresh component-instance layer for a component. Mirrors the editor's
+ * ElementLibrary "add component" flow: a plain block div carrying `componentId`
+ * with empty children (the tree is expanded from the master at render time).
+ *
+ * @param component - The component to instantiate
+ * @param options.variantId - Optional variant to select; ignored when it does not
+ *   match one of the component's variants (render falls back to the first).
+ * @param options.customName - Display name; defaults to the component name
+ * @param options.id - Reuse an existing layer id (for in-place replacement);
+ *   defaults to a freshly generated id
+ */
+export function buildComponentInstanceLayer(
+  component: Component,
+  options?: { variantId?: string; customName?: string; id?: string },
+): Layer {
+  const variantId = options?.variantId && component.variants?.some((v) => v.id === options.variantId)
+    ? options.variantId
+    : undefined;
+
+  const layer: Layer = {
+    id: options?.id ?? generateId('lyr'),
+    name: 'div',
+    customName: options?.customName ?? component.name,
+    componentId: component.id,
+    classes: ['block'], // Ensure it renders as a block element
+    children: [], // Expanded from the master component at render time
+  };
+
+  if (variantId) {
+    layer.componentVariantId = variantId;
+  }
+
+  return layer;
 }
 
 /**

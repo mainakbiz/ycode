@@ -151,3 +151,33 @@ export async function broadcastComponentLayersUpdated(
     timestamp: Date.now(),
   });
 }
+
+// Font broadcasts (channel: fonts:updates)
+
+/**
+ * Tell open builders the installed font set changed (agent add_font call or a
+ * design-edit auto-install). The client hook refetches /api/fonts and
+ * re-injects the font CSS into the canvas, so agent-installed fonts render
+ * without a page reload.
+ */
+export async function broadcastFontsChanged(): Promise<void> {
+  await broadcast('fonts:updates', 'fonts_changed', {
+    user_id: MCP_USER_ID,
+    timestamp: Date.now(),
+  });
+}
+
+// Color variable broadcasts (channel: color-variables:updates)
+
+/**
+ * Tell open builders the color variable set changed (agent create/update/
+ * delete/reorder). The canvas resolves var(--<id>) references from CSS
+ * generated out of the CLIENT store, so without this refetch signal an
+ * agent-created variable renders as nothing until a full page reload.
+ */
+export async function broadcastColorVariablesChanged(): Promise<void> {
+  await broadcast('color-variables:updates', 'color_variables_changed', {
+    user_id: MCP_USER_ID,
+    timestamp: Date.now(),
+  });
+}

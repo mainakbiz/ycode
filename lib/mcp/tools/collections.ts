@@ -17,6 +17,7 @@ import {
   deleteItem,
 } from '@/lib/repositories/collectionItemRepository';
 import { setValuesByFieldName } from '@/lib/repositories/collectionItemValueRepository';
+import { coerceCollectionItemValues } from '@/lib/mcp/utils';
 
 const fieldTypeEnum = z.enum([
   'text', 'number', 'boolean', 'date', 'date_only',
@@ -154,38 +155,53 @@ FIELD TYPES:
 
   server.tool(
     'create_collection_item',
-    'Create a new item in a collection. Optionally provide field values as { fieldId: value } pairs.',
+    `Create a new item in a collection. Optionally provide field values as { fieldId: value } pairs.
+
+Call list_collection_items first to get the collection's field IDs and types. The response includes the collection's field schema so you can fill in remaining fields. Value formats by field type:
+- rich_text: a markdown string (headings, lists, **bold**, *italic*, [links](url) are converted automatically) — or a pre-built Tiptap doc / RichTextBlock[] array. Do NOT send raw HTML or plain text expecting formatting.
+- option: the option ID. reference: the referenced item ID. multi_reference / multi-asset: a JSON array of IDs. boolean: true/false. date: ISO string.`,
     {
       collection_id: z.string().describe('The collection ID'),
       values: z.record(z.string(), z.unknown()).optional()
-        .describe('Field values as { fieldId: value } pairs. For "option" fields, value is the option ID. For multi-asset fields, value is a JSON array of asset IDs.'),
+        .describe('Field values as { fieldId: value } pairs. rich_text fields accept markdown (auto-converted to Tiptap). For "option" fields, value is the option ID. For multi-asset fields, value is a JSON array of asset IDs.'),
     },
     async ({ collection_id, values }) => {
+      const fields = await getFieldsByCollectionId(collection_id);
       const item = await createItem({ collection_id });
 
       if (values && Object.keys(values).length > 0) {
-        const fields = await getFieldsByCollectionId(collection_id);
         const fieldType: Record<string, CollectionFieldType> = {};
         for (const f of fields) {
           fieldType[f.id] = f.type;
         }
-        await setValuesByFieldName(item.id, collection_id, values as Record<string, unknown>, fieldType);
+        const coerced = coerceCollectionItemValues(values as Record<string, unknown>, fieldType);
+        await setValuesByFieldName(item.id, collection_id, coerced, fieldType);
       }
 
       const { items: itemWithValues } = await getItemsWithValues(collection_id);
       const created = itemWithValues.find((i) => i.id === item.id);
 
-      return { content: [{ type: 'text' as const, text: JSON.stringify(created || item) }] };
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            item: created || item,
+            fields: fields.map((f) => ({ id: f.id, name: f.name, type: f.type, key: f.key, data: f.data })),
+          }),
+        }],
+      };
     },
   );
 
   server.tool(
     'update_collection_item',
-    'Update field values for an existing collection item',
+    `Update field values for an existing collection item.
+
+Values are { fieldId: value } pairs (call list_collection_items for field IDs/types). rich_text fields accept a markdown string (auto-converted to Tiptap) or a pre-built Tiptap doc / RichTextBlock[] array — never raw HTML or plain text expecting formatting.`,
     {
       collection_id: z.string().describe('The collection ID'),
       item_id: z.string().describe('The item ID to update'),
-      values: z.record(z.string(), z.unknown()).describe('Field values to update as { fieldId: value } pairs'),
+      values: z.record(z.string(), z.unknown()).describe('Field values to update as { fieldId: value } pairs. rich_text fields accept markdown (auto-converted to Tiptap).'),
     },
     async ({ collection_id, item_id, values }) => {
       const fields = await getFieldsByCollectionId(collection_id);
@@ -193,7 +209,8 @@ FIELD TYPES:
       for (const f of fields) {
         fieldType[f.id] = f.type;
       }
-      await setValuesByFieldName(item_id, collection_id, values as Record<string, unknown>, fieldType);
+      const coerced = coerceCollectionItemValues(values as Record<string, unknown>, fieldType);
+      await setValuesByFieldName(item_id, collection_id, coerced, fieldType);
       return { content: [{ type: 'text' as const, text: `Updated item ${item_id}` }] };
     },
   );

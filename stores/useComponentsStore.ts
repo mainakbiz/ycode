@@ -152,6 +152,13 @@ interface ComponentsActions {
   // Data loading
   setComponents: (components: Component[]) => void;
   loadComponents: () => Promise<void>;
+  /**
+   * Apply an authoritative component snapshot from the server (e.g. after the AI
+   * agent edits it). Replaces the record in `components` and rebuilds the
+   * component's drafts from its variants so the open canvas reflects the change
+   * without a manual reload. Marks the drafts clean so it doesn't trigger a save.
+   */
+  applyServerComponent: (component: Component) => void;
 
   // CRUD operations
   createComponent: (name: string, layers: Layer[]) => Promise<Component | null>;
@@ -256,6 +263,35 @@ export const useComponentsStore = create<ComponentsStore>((set, get) => {
 
     // Set components (used by unified init)
     setComponents: (components) => set({ components }),
+
+    // Apply an authoritative server snapshot (e.g. after AI edits a component).
+    applyServerComponent: (component) => {
+      const variants = component.variants && component.variants.length > 0
+        ? component.variants
+        : [{ id: generateId('cmpvar'), name: 'Default', layers: component.layers ?? [] }];
+
+      // Rebuild the per-variant drafts so the open component canvas re-renders
+      // with the AI's changes. Deep-clone so later local edits don't mutate the
+      // stored component record.
+      const variantDrafts: Record<string, Layer[]> = {};
+      for (const variant of variants) {
+        variantDrafts[variant.id] = JSON.parse(JSON.stringify(variant.layers ?? []));
+      }
+
+      set((state) => ({
+        components: state.components.some((c) => c.id === component.id)
+          ? state.components.map((c) => (c.id === component.id ? component : c))
+          : [component, ...state.components],
+        componentDrafts: {
+          ...state.componentDrafts,
+          [component.id]: variantDrafts,
+        },
+        componentDraftDirty: {
+          ...state.componentDraftDirty,
+          [component.id]: false,
+        },
+      }));
+    },
 
     // Load all components
     loadComponents: async () => {

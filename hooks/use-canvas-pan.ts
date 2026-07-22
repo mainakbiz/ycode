@@ -16,6 +16,16 @@ interface UseCanvasPanResult {
   isPanGestureActive: () => boolean;
 }
 
+/** True when the keyboard event originates from (or focus rests in) a text-entry
+ * element, so Space should type a character rather than arm canvas panning. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = (target as HTMLElement | null) ?? null;
+  const active = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+  const check = (node: HTMLElement | null): boolean =>
+    !!node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.isContentEditable);
+  return check(el) || check(active);
+}
+
 /**
  * Enables panning the canvas by dragging while holding Space (industry standard
  * "hand tool"), or with the middle mouse button. Lets users navigate a large
@@ -149,9 +159,14 @@ export function useCanvasPan({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat || state.spaceHeld) return;
+      // Never hijack Space while the user is typing in a text field (chat
+      // composer, settings inputs, etc.). The pointer can rest over the canvas
+      // while focus is in an editable element, so `overCanvas` alone isn't
+      // enough — check the focused/target element too.
+      if (isTextEditingRef.current || isEditableTarget(e.target)) return;
       // Only hijack Space when the pointer is over the canvas, so it keeps
       // working normally for inputs/selects/buttons in the settings panels.
-      if (isTextEditingRef.current || !state.overCanvas) return;
+      if (!state.overCanvas) return;
       state.spaceHeld = true;
       e.preventDefault(); // stop the page from scrolling on space
       if (!state.isPanning) setCursor('grab');

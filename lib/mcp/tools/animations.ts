@@ -256,6 +256,13 @@ Each interaction has:
 - timeline: { breakpoints, repeat, yoyo, scrollStart?, scrollEnd?, scrub?, toggleActions? }
 - tweens: [{ layer_id, position, duration, ease, from, to, apply_styles? }]
 
+EXPANDABLE MENUS / DROPDOWNS / ACCORDIONS: build a show/hide toggle by putting a
+\`click\` interaction with \`timeline.yoyo: true\` on the trigger (e.g. a hamburger button),
+with a tween that targets the panel layer (\`layer_id\` = the menu being shown/hidden,
+usually a sibling, NOT the button) animating \`display\` "hidden" -> "visible". Set
+\`apply_styles: { display: "on-load" }\` so the panel starts collapsed. Scope to
+\`breakpoints: ["mobile"]\` for hamburger menus. yoyo makes each click alternate open/close.
+
 Tween value formats:
 - x/y/width/height/distance: "100px", "50%", "5rem"
 - scale: "1", "1.05" (no unit)
