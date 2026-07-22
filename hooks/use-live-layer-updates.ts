@@ -247,17 +247,31 @@ export function useLiveLayerUpdates(
     const currentPageId = pageIdRef.current;
     if (currentPageId && payload.page_id === currentPageId) {
       markPageMcpSynced(currentPageId);
-      const { setDraftLayers, draftsByPageId } = usePagesStore.getState();
+      const { setDraftLayers, draftsByPageId, loadDraft } = usePagesStore.getState();
+      const existingDraft = draftsByPageId[currentPageId];
 
-      // Diff against the current draft (before replacing it) so the canvas can
-      // step-reveal exactly the layers this remote update added.
-      const previousLayers = draftsByPageId[currentPageId]?.layers ?? [];
-      const addedIds = findAddedLayerIds(previousLayers, payload.layers);
+      if (existingDraft) {
+        // Diff against the current draft (before replacing it) so the canvas can
+        // step-reveal exactly the layers this remote update added.
+        const previousLayers = existingDraft.layers ?? [];
+        const addedIds = findAddedLayerIds(previousLayers, payload.layers);
 
-      setDraftLayers(currentPageId, payload.layers);
+        setDraftLayers(currentPageId, payload.layers);
 
-      if (addedIds.length > 0) {
-        useEditorStore.getState().markLayersEntering(addedIds);
+        if (addedIds.length > 0) {
+          useEditorStore.getState().markLayersEntering(addedIds);
+        }
+      } else {
+        // The broadcast can race the page's initial draft load (the channel
+        // subscribes on page switch while loadDraft is still in flight), and
+        // setDraftLayers no-ops without a loaded draft. Load it first, then
+        // apply the authoritative layers (loadDraft de-dupes in-flight loads).
+        void (async () => {
+          await loadDraft(currentPageId);
+          if (usePagesStore.getState().draftsByPageId[currentPageId]) {
+            usePagesStore.getState().setDraftLayers(currentPageId, payload.layers);
+          }
+        })();
       }
 
       // Pull in any assets these layers reference that the editor hasn't loaded
