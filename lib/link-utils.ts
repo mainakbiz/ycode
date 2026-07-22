@@ -516,7 +516,12 @@ export function generateLinkHref(
   switch (linkSettings.type) {
     case 'url': {
       const urlContent = linkSettings.url?.data?.content || '';
-      href = resolveInlineVariablesFromData(urlContent, collectionItemData, pageCollectionItemData) || '';
+      const resolved = resolveInlineVariablesFromData(urlContent, collectionItemData, pageCollectionItemData) || '';
+      // A link-typed CMS field resolves to a serialized CollectionLinkValue (a field
+      // bound as an inline variable in url content). Unwrap it to a concrete href,
+      // mirroring the `field` link type; plain URLs pass through unchanged.
+      const linkValue = parseCollectionLinkValue(resolved);
+      href = linkValue ? (resolveCollectionLinkValue(linkValue, context) || '') : resolved;
       break;
     }
     case 'email': {

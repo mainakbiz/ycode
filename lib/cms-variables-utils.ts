@@ -245,7 +245,7 @@ function replaceOutsideCanonical(text: string, regex: RegExp, replacer: (match: 
  * Important: each pass operates only on text outside existing canonical tags,
  * so already-normalized content is never re-wrapped.
  */
-function normalizeInlineVariableFormats(text: string): string {
+export function normalizeInlineVariableFormats(text: string): string {
   // 0. Convert self-closing <ycode-inline-variable .../> to open/close form
   text = text.replace(
     /<ycode-inline-variable\b([^>]*?)\/>/g,

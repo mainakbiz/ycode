@@ -6,7 +6,7 @@
  */
 
 import type { CollectionItemWithValues } from '@/types';
-import { formatFieldValue, resolveFieldFromSources } from '@/lib/cms-variables-utils';
+import { formatFieldValue, normalizeInlineVariableFormats, resolveFieldFromSources } from '@/lib/cms-variables-utils';
 
 /** Regex for matching inline variable tags (use with 'g' flag) */
 export const INLINE_VARIABLE_REGEX = /<ycode-inline-variable>([\s\S]*?)<\/ycode-inline-variable>/g;
@@ -29,7 +29,11 @@ export function resolveInlineVariables(
     return text;
   }
 
-  return text.replace(INLINE_VARIABLE_REGEX, (match, variableContent) => {
+  // Normalize legacy variable formats (e.g. raw JSON from migrated data) to the
+  // canonical <ycode-inline-variable> tag so the resolver below can match them.
+  const normalized = normalizeInlineVariableFormats(text);
+
+  return normalized.replace(INLINE_VARIABLE_REGEX, (match, variableContent) => {
     try {
       const parsed = JSON.parse(variableContent.trim());
 
@@ -67,12 +71,17 @@ export function resolveInlineVariablesFromData(
   layerDataMap?: Record<string, Record<string, string>>
 ): string {
   if (!text) return '';
+
+  // Normalize legacy variable formats (e.g. raw JSON from migrated data) to the
+  // canonical <ycode-inline-variable> tag so the resolver below can match them.
+  const normalized = normalizeInlineVariableFormats(text);
+
   if (!collectionItemData && !pageCollectionItemData) {
     // Remove variable tags if no data available
-    return text.replace(INLINE_VARIABLE_REGEX, '');
+    return normalized.replace(INLINE_VARIABLE_REGEX, '');
   }
 
-  return text.replace(INLINE_VARIABLE_REGEX, (match, variableContent) => {
+  return normalized.replace(INLINE_VARIABLE_REGEX, (match, variableContent) => {
     try {
       const parsed = JSON.parse(variableContent.trim());
       if (parsed.type === 'field' && parsed.data?.field_id) {
