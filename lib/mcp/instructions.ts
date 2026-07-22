@@ -290,10 +290,12 @@ very different behavior:
    and hold every section to it: a **personality** (bold, editorial, brutalist, playful,
    quiet-luxury…); a **palette derived from it** (a real accent + neutrals tinted toward the
    brand hue — consider dark, vivid, duotone, or gradient grounds, not default gray); a
-   **distinctive display face** with real scale contrast against the body; and ONE
+   **distinctive display face** with real scale contrast against the body; ONE
    **signature move** (oversized type, asymmetry, overlap/layering, full-bleed imagery, a
-   bordered grid) repeated 2-3 times across the page. Generic, templated-looking output is
-   a failure in this mode.
+   bordered grid) repeated 2-3 times across the page; and a **composition plan** — at least
+   two sections that BREAK the standard centered-container pattern (asymmetric split, offset
+   grid, full-bleed band, overlap across a section boundary). Generic, templated-looking
+   output is a failure in this mode.
 
 When unsure which mode you're in, inspect first: \`list_pages\`, then \`get_layers\` on the
 relevant page. If the project already has real content, you are almost always in mode 2.
@@ -346,11 +348,21 @@ what exists:
 Only introduce new tokens when creating something new from nothing (mode 3) or when the user
 explicitly asks for a restyle.
 
-### CRITICAL: Use Pre-Built Layouts First
+### Layout Templates — how much to lean on them depends on the mode
 
-YCode has professionally designed, fully-styled layout templates. **Prefer these over building
-from scratch** for STRUCTURE — one \`add_layout\` call inserts a complete, well-structured section
-server-side, which is far faster than hand-building the same skeleton with \`batch_operations\`.
+YCode has professionally designed layout templates (catalog below). One \`add_layout\` call
+inserts a complete, well-structured section server-side — far faster than hand-building the
+same skeleton with \`batch_operations\`.
+
+- **Reference (mode 1) & existing site (mode 2):** prefer templates for structure, then
+  restyle to the reference / design system. Consistency beats novelty here.
+- **New project (mode 3):** templates are a creativity trap — a template-stamped page looks
+  like every other template-stamped page, and generic output is a failure in this mode.
+  HAND-BUILD the signature sections (hero, pricing, portfolio/features — whatever carries the
+  page's personality) with \`batch_operations\`, executing your brief's composition move. Use
+  templates only for commodity sections (navigation, footer, FAQ), and change at least one
+  structural thing about each (column rhythm, alignment, ordering, an overlapping element) so
+  it doesn't read as stock.
 
 CRITICAL: layout templates ship with GENERIC placeholder styling — hardcoded blue/gray hex colors
 and default fonts. They are a starting SKELETON, never the final look. A layout you insert but
@@ -386,11 +398,13 @@ above are enough.)
 ### Page Building Workflow (minimize round-trips)
 
 1. **Plan** the sections the page needs (e.g. header, hero, features, pricing, footer).
-2. **Add every matching layout up front** — issue the \`add_layout\` calls for all sections you need
-   (they append in order). Then, in the same build, customize text/images AND restyle each
+2. **Build all sections up front.** In modes 1-2, issue the \`add_layout\` calls for all sections
+   you need (they append in order); then, in the same build, customize text/images AND restyle each
    template to the target design system: swap placeholder colors for the site's color variables,
    apply the site's fonts, and match its spacing/radii (see "Reuse the Existing Design System").
    Restyling is not optional — an unrestyled template ships the generic default look.
+   In mode 3, hand-build the signature sections to your brief and reserve templates for commodity
+   sections (see "Layout Templates" above).
 3. **Do NOT call \`get_layers\` just to "verify"** after building. The active-page snapshot is included
    with the user's message and each edit tool returns what it changed. Only call \`get_layers\` when you
    genuinely need the current tree (e.g. to target a layer you can't otherwise identify), and never

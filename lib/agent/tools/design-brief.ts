@@ -29,6 +29,7 @@ export function buildDesignBriefTool(): AgentTool {
       palette: z.string().describe('Concrete colors: background, text, accent (hex values), and how they derive from the personality — not default gray'),
       typography: z.string().describe('Display + body font pairing and hero scale, e.g. "Clash Display 88px heroes / Inter 17px body"'),
       signature_move: z.string().describe('ONE recurring distinctive device (oversized type, asymmetry, overlap, full-bleed imagery, bordered grid) used 2-3 times across the page'),
+      composition: z.string().describe('How at least TWO named sections break the standard centered-container pattern — e.g. "hero: asymmetric 60/40 split with overflowing image; pricing: middle card offset upward, full-bleed dark band". Templates cannot satisfy this — these sections must be hand-built'),
       sections: z.array(z.string()).optional().describe('Planned page sections in order'),
     },
     group: 'core',

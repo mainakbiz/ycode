@@ -1,5 +1,6 @@
 import { DEFERRED_GROUP_GUIDES, SYSTEM_INSTRUCTIONS } from '@/lib/mcp/instructions';
 import { DEFAULT_MAX_TOKENS, MAX_HISTORY_CHARS, MAX_HISTORY_MESSAGES, MAX_TOOL_TURNS } from '@/lib/agent/config';
+import { pickCreativeSeeds } from '@/lib/agent/creative-seeds';
 import { compactToolResult } from '@/lib/agent/tools/compact-result';
 import { buildDesignBriefTool, DESIGN_BRIEF_NAME } from '@/lib/agent/tools/design-brief';
 import { buildLoadToolsTool, deferredGroupOf, LOAD_TOOLS_NAME } from '@/lib/agent/tools/deferred';
@@ -135,6 +136,11 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
   const enforceCreativeBrief = activePageIsBlank && !hasDesignSystem;
   let briefRecorded = conversationHasDesignBrief(messages);
   let briefCorrectionTurn: number | null = null;
+  // Creative mode only: inject randomly chosen art-direction seeds so run-to-run
+  // output varies instead of converging on the model's default safe look.
+  if (enforceCreativeBrief && !briefRecorded) {
+    injectCreativeSeeds(messages);
+  }
 
   // One-time snapshot of the fixed per-call prefix so the logs show how much of
   // each turn is static (system + tools) vs. accumulating history. ~4 chars/token.
@@ -313,7 +319,7 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
         results.push({
           type: 'tool_result',
           toolUseId: call.id,
-          content: 'Brief recorded. Hold every section to this direction — palette, typography, and the signature move must show up consistently across the page.',
+          content: 'Brief recorded. Hold every section to this direction — palette, typography, and the signature move must show up consistently across the page, and the composition plan must be visible: hand-build the sections it names rather than stamping layout templates for them.',
         });
         yield { type: 'tool_result', id: call.id, name: call.name, ok: true };
         continue;
@@ -329,7 +335,7 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
           toolUseId: call.id,
           content:
             'Not executed: this is a new build on a blank page, so commit to a creative direction first. '
-            + 'Call design_brief (personality, palette, typography, signature_move), then retry this operation and build to that brief.',
+            + 'Call design_brief (personality, palette, typography, signature_move, composition), then retry this operation and build to that brief.',
           isError: true,
         });
         yield { type: 'tool_result', id: call.id, name: call.name, ok: false };
@@ -790,6 +796,31 @@ async function injectDesignSystemSnapshot(messages: AgentMessage[]): Promise<boo
   const target = messages[lastUserIndex];
   messages[lastUserIndex] = { ...target, content: [block, ...target.content] };
   return hasDesignSystem;
+}
+
+/**
+ * Prepend randomly chosen art-direction seeds to the latest user turn on
+ * creative-mode builds (blank page, no design system, no brief yet). Injected
+ * into the user message — not the cached system prompt — so the static system
+ * block stays cache-friendly despite the per-run randomness.
+ */
+function injectCreativeSeeds(messages: AgentMessage[]): void {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === 'user');
+  if (lastUserIndex === -1) return;
+
+  const seeds = pickCreativeSeeds(3);
+  const block: AgentContentBlock = {
+    type: 'text',
+    text:
+      'Art-direction seeds for this new build — optional inspiration for your design_brief. '
+      + 'Adopt one, adapt one, or reject them all for a stronger idea of your own; the only '
+      + 'forbidden outcome is the default safe look (white ground, blue accent, centered '
+      + 'containers everywhere):\n'
+      + seeds.map((seed) => `- ${seed}`).join('\n'),
+  };
+
+  const target = messages[lastUserIndex];
+  messages[lastUserIndex] = { ...target, content: [block, ...target.content] };
 }
 
 async function injectActivePageSnapshot(

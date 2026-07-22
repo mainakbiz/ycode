@@ -303,6 +303,7 @@ function buildReviewPrompt(pageId: string): string {
   return (
     `Here is a screenshot of ${pageLabel} after your changes — this is the page these edits belong to, so review it as that page. ` +
     'Critically review it against my request and good design principles — layout, spacing, alignment, contrast, overflow, readability, and visual hierarchy. ' +
+    'Also judge distinctiveness: if the page reads as a default template — generic blue/gray palette, default fonts, every section a centered container — push the weakest section toward the committed creative direction (when the site has an established design system, match that system instead of inventing a new look). ' +
     'If anything looks wrong or low quality, fix it with the tools (using this page id). ' +
     'If it already looks good, do not make changes for the sake of it. ' +
     'Do not narrate your review, describe the screenshot, or list what looks good or what you checked. ' +
