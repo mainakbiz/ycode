@@ -251,7 +251,7 @@ or external URL), with optional 301 (permanent) or 302 (temporary) semantics. Pa
 
 Examples:
 - { old_url: "/about-us", new_url: "/about", type: "301" }
-- { old_url: "/blog/.+", new_url: "/posts/$0" } (regex — entire match is $0)
+- { old_url: "/blog/(.*)", new_url: "/posts/$1" } (regex — $1 is the captured group)
 - { old_url: "/", new_url: "/welcome" } (root / homepage redirect)`,
     {
       old_url: z.string().describe('The old internal path (must start with /). Use ".+" or ".*" for regex patterns.'),

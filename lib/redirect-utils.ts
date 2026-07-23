@@ -1,6 +1,15 @@
 import type { Redirect } from '@/types';
 
 /**
+ * Convert legacy PCRE-style substitution tokens to JS `String.replace` tokens.
+ * The UI documents `$0` as the full matched path (PHP `preg_replace` behavior),
+ * but JS uses `$&` for the full match. `$1`+ capture groups are left untouched.
+ */
+function normalizeReplacementTokens(replacement: string): string {
+  return replacement.replace(/\$0/g, '$$&');
+}
+
+/**
  * Match a request path against configured redirects.
  * Exact string matches take priority, then regex patterns (`.+`, `.*`).
  * Ported from legacy CustomDomain::getRedirectedUrl behavior.
@@ -40,7 +49,7 @@ export function matchRedirect(
       const regex = new RegExp(`^${escapedPattern}$`);
 
       if (regex.test(currentPath)) {
-        const newUrl = currentPath.replace(regex, r.newUrl);
+        const newUrl = currentPath.replace(regex, normalizeReplacementTokens(r.newUrl));
         return { ...r, newUrl };
       }
     } catch {

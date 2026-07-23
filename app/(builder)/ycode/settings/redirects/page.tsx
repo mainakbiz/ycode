@@ -287,9 +287,9 @@ export default function RedirectsSettingsPage() {
             <Field>
               <FieldLabel htmlFor="add-old-url">Old URL</FieldLabel>
               <FieldDescription>
-                The URL path to redirect from (e.g. /old-page). Use a wildcard
-                pattern to match many URLs at once: /blog/.* matches everything
-                under /blog.
+                The URL path to redirect from (e.g. {'"/old-page"'}). Use a wildcard
+                pattern to match many URLs at once: {'"/blog/(.*)"'} matches everything
+                under /blog and captures the matched part for reuse.
               </FieldDescription>
               <Input
                 id="add-old-url"
@@ -303,8 +303,9 @@ export default function RedirectsSettingsPage() {
             <Field>
               <FieldLabel htmlFor="add-new-url">New URL</FieldLabel>
               <FieldDescription>
-                Internal path (e.g. /new-page) or external URL. When the old URL is a
-                wildcard pattern, use $0 to insert the matched path (e.g. /posts/$0).
+                Internal path (e.g. {'"/new-page"'}) or external URL. To reuse a captured
+                part of a wildcard pattern, reference it with $1
+                (e.g. {'"/old-path/(.*)"'} → {'"/new-path/$1"'}).
               </FieldDescription>
               <Input
                 id="add-new-url"
@@ -353,9 +354,9 @@ export default function RedirectsSettingsPage() {
             <Field>
               <FieldLabel htmlFor="edit-old-url">Old URL</FieldLabel>
               <FieldDescription>
-                The URL path to redirect from (e.g. /old-page). Use a wildcard
-                pattern to match many URLs at once: /blog/.* matches everything
-                under /blog.
+                The URL path to redirect from (e.g. {'"/old-page"'}). Use a wildcard
+                pattern to match many URLs at once: {'"/blog/(.*)"'} matches everything
+                under /blog and captures the matched part for reuse.
               </FieldDescription>
               <Input
                 id="edit-old-url"
@@ -369,9 +370,10 @@ export default function RedirectsSettingsPage() {
             <Field>
               <FieldLabel htmlFor="edit-new-url">New URL</FieldLabel>
               <FieldDescription>
-                Internal path (e.g. /new-page) or external URL (e.g.
-                https://example.com). When the old URL is a wildcard pattern,
-                use $0 to insert the matched path (e.g. /posts/$0).
+                Internal path (e.g. {'"/new-page"'}) or external URL (e.g.
+                {' '}{'"https://example.com"'}). To reuse a captured part of a wildcard
+                pattern, reference it with $1 (e.g. {'"/old-path/(.*)"'} →
+                {' '}{'"/new-path/$1"'}).
               </FieldDescription>
               <Input
                 id="edit-new-url"
